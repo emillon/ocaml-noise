@@ -11,10 +11,18 @@ module Pattern = struct
     | _ -> false
 end
 
+module Dh = struct
+  type t = Noise.Dh.t
+
+  let of_yojson json =
+    let open Ppx_deriving_yojson_runtime in
+    [%of_yojson: string] json >>= Noise.Dh.of_string
+end
+
 type test_vector =
   { name : string
   ; pattern : Pattern.t
-  ; dh : string
+  ; dh : Dh.t
   ; cipher: string
   ; hash : string
   ; init_prologue : string

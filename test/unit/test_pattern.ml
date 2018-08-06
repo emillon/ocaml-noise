@@ -1,7 +1,5 @@
 open OUnit2
-
-let (>:=) s f =
-  s >:: f s
+open Helpers.Infix
 
 let test_of_string =
   let should_be expected s ctxt =
