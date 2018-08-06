@@ -4,6 +4,7 @@ let suite =
   "Unit tests" >:::
   [ Test_cipher.suite
   ; Test_dh.suite
+  ; Test_hash.suite
   ; Test_pattern.suite
   ]
 

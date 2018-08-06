@@ -27,12 +27,20 @@ module Cipher = struct
     [%of_yojson: string] json >>= Noise.Cipher.of_string
 end
 
+module Hash = struct
+  type t = Noise.Hash.t
+
+  let of_yojson json =
+    let open Ppx_deriving_yojson_runtime in
+    [%of_yojson: string] json >>= Noise.Hash.of_string
+end
+
 type test_vector =
   { name : string
   ; pattern : Pattern.t
   ; dh : Dh.t
   ; cipher: Cipher.t
-  ; hash : string
+  ; hash : Hash.t
   ; init_prologue : string
   ; init_ephemeral : string
   ; init_remote_static : string option [@default None]
