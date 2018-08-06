@@ -19,11 +19,19 @@ module Dh = struct
     [%of_yojson: string] json >>= Noise.Dh.of_string
 end
 
+module Cipher = struct
+  type t = Noise.Cipher.t
+
+  let of_yojson json =
+    let open Ppx_deriving_yojson_runtime in
+    [%of_yojson: string] json >>= Noise.Cipher.of_string
+end
+
 type test_vector =
   { name : string
   ; pattern : Pattern.t
   ; dh : Dh.t
-  ; cipher: string
+  ; cipher: Cipher.t
   ; hash : string
   ; init_prologue : string
   ; init_ephemeral : string

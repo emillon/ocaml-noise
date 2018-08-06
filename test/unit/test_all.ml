@@ -2,7 +2,8 @@ open OUnit2
 
 let suite =
   "Unit tests" >:::
-  [ Test_dh.suite
+  [ Test_cipher.suite
+  ; Test_dh.suite
   ; Test_pattern.suite
   ]
 
