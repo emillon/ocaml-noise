@@ -1,0 +1,20 @@
+(alias
+ (name runtest)
+ (deps noise-c-basic.txt)
+ (action
+  (run ./test_vectors.exe)
+ )
+ )
+
+(executable
+ (name test_vectors)
+ (libraries
+  noise
+  oUnit
+  ppx_deriving_yojson.runtime
+  yojson
+ )
+ (preprocess
+  (pps ppx_deriving_yojson))
+ (flags :standard -w -39)
+)

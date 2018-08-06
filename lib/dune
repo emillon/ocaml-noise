@@ -1,0 +1,6 @@
+(library
+ (name noise)
+ (preprocess
+  (pps ppx_deriving.std)
+ )
+ )

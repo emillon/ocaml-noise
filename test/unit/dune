@@ -1,0 +1,10 @@
+(test
+ (name test_all)
+ (libraries
+  noise
+  oUnit
+ )
+ (preprocess
+  (pps ppx_deriving.std)
+ )
+ )
