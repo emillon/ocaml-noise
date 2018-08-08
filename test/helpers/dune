@@ -1,0 +1,14 @@
+(library
+ (name test_helpers)
+ (libraries
+  cstruct
+  hex
+  oUnit
+  ppx_deriving_yojson.runtime
+ )
+ (preprocess
+  (pps
+   ppx_deriving.std
+   ppx_deriving_yojson
+  ))
+ )

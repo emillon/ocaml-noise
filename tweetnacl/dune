@@ -1,0 +1,10 @@
+(library
+ (name tweetnacl)
+ (libraries
+  cstruct
+ )
+ (c_names
+  tweetnacl_stubs
+  tweetnacl
+ )
+ )

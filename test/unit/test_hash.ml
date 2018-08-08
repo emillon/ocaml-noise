@@ -1,5 +1,5 @@
 open OUnit2
-open Helpers.Infix
+open Test_helpers.Infix
 
 let test_of_string =
   let should_be expected s ctxt =
@@ -12,13 +12,25 @@ let test_of_string =
       got
   in
   "of_string" >:::
-  [ "BLAKE2s" >:= should_be (Ok BLAKE2s)
-  ; "BLAKE2b" >:= should_be (Ok BLAKE2b)
-  ; "SHA256" >:= should_be (Ok SHA256)
-  ; "SHA512" >:= should_be (Ok SHA512)
+  [ "SHA256" >:= should_be (Ok SHA256)
+  ]
+
+let test_len =
+  let test h expected ctxt =
+    let got = Noise.Hash.len h in
+    assert_equal
+      ~ctxt
+      ~cmp:[%eq: int]
+      ~printer:[%show: int]
+      expected
+      got
+  in
+  "len" >:::
+  [ "SHA256" >:: test SHA256 32
   ]
 
 let suite =
   "Hash" >:::
   [ test_of_string
+  ; test_len
   ]

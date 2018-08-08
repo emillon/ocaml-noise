@@ -1,5 +1,5 @@
 open OUnit2
-open Helpers.Infix
+open Test_helpers.Infix
 
 let test_of_string =
   let should_be expected s ctxt =
@@ -12,8 +12,7 @@ let test_of_string =
       got
   in
   "of_string" >:::
-  [ "ChaChaPoly" >:= should_be (Ok Chacha_poly)
-  ; "AESGCM" >:= should_be (Ok AES_GCM)
+  [ "AESGCM" >:= should_be (Ok AES_GCM)
   ]
 
 let suite =

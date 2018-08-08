@@ -1,5 +1,5 @@
 open OUnit2
-open Helpers.Infix
+open Test_helpers.Infix
 
 let test_of_string =
   let should_be expected s ctxt =
@@ -13,20 +13,6 @@ let test_of_string =
   in
   "of_string" >:::
   [ "N" >:= should_be (Ok N)
-  ; "X" >:= should_be (Ok X)
-  ; "K" >:= should_be (Ok K)
-  ; "NN" >:= should_be (Ok NN)
-  ; "NK" >:= should_be (Ok NK)
-  ; "NX" >:= should_be (Ok NX)
-  ; "XN" >:= should_be (Ok XN)
-  ; "XK" >:= should_be (Ok XK)
-  ; "XX" >:= should_be (Ok XX)
-  ; "KN" >:= should_be (Ok KN)
-  ; "KK" >:= should_be (Ok KK)
-  ; "KX" >:= should_be (Ok KX)
-  ; "IN" >:= should_be (Ok IN)
-  ; "IK" >:= should_be (Ok IK)
-  ; "IX" >:= should_be (Ok IX)
   ]
 
 let suite =

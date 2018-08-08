@@ -1,5 +1,4 @@
 type t =
-  | Chacha_poly
   | AES_GCM
 [@@deriving eq,show]
 

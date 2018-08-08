@@ -1,5 +1,11 @@
 (library
  (name noise)
+ (libraries
+  cstruct
+  digestif.ocaml
+  nocrypto
+  tweetnacl
+ )
  (preprocess
   (pps ppx_deriving.std)
  )
