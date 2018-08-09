@@ -99,14 +99,6 @@ end
 module Private_key = struct
   type t = Noise.Private_key.t
 
-  let equal a b =
-    Cstruct.equal
-      (Noise.Private_key.bytes a)
-      (Noise.Private_key.bytes b)
-
-  let pp fmt x =
-    Test_helpers.Hex_string.pp fmt (Noise.Private_key.bytes x)
-
   let of_yojson json =
     let open Ppx_deriving_yojson_runtime in
     [%of_yojson: Test_helpers.Hex_string.t] json >|= Noise.Private_key.of_bytes
@@ -167,10 +159,9 @@ type state =
   ; s : Private_key.t option
   ; ck : Cstruct.t
   ; h : Cstruct.t
-  ; k : Private_key.t option
-  ; nonce : int64
   ; handshake_done : bool
   ; params : params
+  ; cipher_state : Noise.Cipher_state.t
   }
 
 let mix_hash n data =
@@ -202,10 +193,9 @@ let make_responder ~s ~h ~params =
   ; rs = None
   ; ck = h
   ; h
-  ; k = None
-  ; nonce = 0L
   ; handshake_done = false
   ; params
+  ; cipher_state = Noise.Cipher_state.Empty
   }
 
 let split_dh params msg =
@@ -237,8 +227,10 @@ let hkdf2 params ck input =
     ~salt:ck
     ~ikm:input
 
-let initialize_key n k =
-  { n with k = Some k; nonce = 0L }
+let initialize_key n key =
+  { n with
+    cipher_state = Noise.Cipher_state.create key
+  }
 
 let set_ck n ck =
   { n with ck }
@@ -256,9 +248,9 @@ let mix_key n0 input =
   initialize_key n1 (Noise.Private_key.of_bytes truncated_temp_k)
 
 let incr_nonce n =
-  (* XXX check overflow *)
-  let new_nonce = Int64.succ n.nonce in
-  { n with nonce = new_nonce }
+  { n with
+    cipher_state = Noise.Cipher_state.incr_nonce n.cipher_state
+  }
 
 let (>>=) x f =
   match x with
@@ -266,14 +258,15 @@ let (>>=) x f =
   | Error _ as e -> e
 
 let decrypt_with_ad n0 ciphertext_and_tag =
-  match n0.k with
-  | None -> Ok (n0, ciphertext_and_tag)
-  | Some key ->
+  match n0.cipher_state with
+  | Empty -> Ok (n0, ciphertext_and_tag)
+  | Depleted -> Error "Nonce depleted"
+  | Ready {key; nonce} ->
     let decrypt_result =
       Noise.Cipher.decrypt_with_ad
         n0.params.cipher
         ~key
-        ~nonce:n0.nonce
+        ~nonce
         ~ad:n0.h
         ciphertext_and_tag
     in
@@ -317,10 +310,9 @@ let make_init ~h ~rs ~params =
   ; s = None
   ; rs = Some rs
   ; ck = h
-  ; nonce = 0L
-  ; k = None
   ; handshake_done = false
   ; params
+  ; cipher_state = Noise.Cipher_state.Empty
   }
 
 let init_handle_e n0 epub epriv =
@@ -336,14 +328,15 @@ let init_handle_es n =
   |> mix_key n
 
 let encrypt_with_ad n0 plaintext =
-  match n0.k with
-  | None -> Ok (n0, plaintext)
-  | Some key ->
+  match n0.cipher_state with
+  | Empty -> Ok (n0, plaintext)
+  | Depleted -> Error "Nonce depleted"
+  | Ready {key; nonce} ->
     let encrypt_result =
       Noise.Cipher.encrypt_with_ad
         n0.params.cipher
         ~key
-        ~nonce:n0.nonce
+        ~nonce
         ~ad:n0.h
         plaintext
     in
@@ -422,20 +415,20 @@ let build_test_case vector =
                 vector.init_ephemeral
               >>= fun (n1, _) ->
               let final = {n1 with handshake_done = true} in
-              Ok (final.k, get_handshake final)
+              Ok (final.cipher_state, get_handshake final)
             in
 
             let responder_result =
               responder_handle_e_es responder first_msg.ciphertext
               >>= fun (n1, (_:Cstruct.t)) ->
               let final_resp = {n1 with handshake_done = true} in
-              Ok (final_resp.k, get_handshake final_resp)
+              Ok (final_resp.cipher_state, get_handshake final_resp)
             in
 
             assert_equal
               ~ctxt
-              ~cmp:[%eq: Private_key.t option * Test_helpers.Hex_string.t]
-              ~printer:[%show: Private_key.t option * Test_helpers.Hex_string.t]
+              ~cmp:[%eq: Noise.Cipher_state.t * Test_helpers.Hex_string.t]
+              ~printer:[%show: Noise.Cipher_state.t * Test_helpers.Hex_string.t]
               ~msg:"Final states should be equal"
               (get_result_exn "initiator" initiator_result)
               (get_result_exn "responder" responder_result)
