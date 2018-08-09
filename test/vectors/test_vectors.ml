@@ -392,7 +392,13 @@ let init_handle_e_es n0 payload epub epriv =
 let with_transport_one_way n0 k =
   match n0.transport with
   | Some cipher_state ->
-    k cipher_state
+    k cipher_state >>= fun (new_cs, result) ->
+    let n1 =
+      { n0 with
+        transport = Some new_cs
+      }
+    in
+    Ok (n1, result)
   | None ->
     Error "Handshake not finished"
 
@@ -411,6 +417,38 @@ let send_transport_one_way n0 plaintext =
     ~ad:Cstruct.empty
     n0.params.cipher
     plaintext
+
+let check_one_way_transport_message ~ctxt initiator responder message n =
+  let (new_resp, recovered_plaintext) =
+    get_result_exn
+      "transport message, responder"
+      ( receive_transport_one_way
+          responder
+          message.ciphertext
+      )
+  in
+  assert_equal
+    ~ctxt
+    ~cmp:[%eq: Test_helpers.Hex_string.t]
+    ~printer:[%show: Test_helpers.Hex_string.t]
+    ~msg:(Printf.sprintf "Transport message #%d decryption" n)
+    message.payload
+    recovered_plaintext;
+  let (new_init, generated_ciphertext) =
+    get_result_exn "transport 1, sender"
+      ( send_transport_one_way
+          initiator
+          message.payload
+      )
+  in
+  assert_equal
+    ~ctxt
+    ~cmp:[%eq: Test_helpers.Hex_string.t]
+    ~printer:[%show: Test_helpers.Hex_string.t]
+    ~msg:(Printf.sprintf "Transport message #%d encryption" n)
+    message.ciphertext
+    generated_ciphertext;
+  (new_init, new_resp)
 
 let build_test_case vector =
   vector.name >:: fun ctxt ->
@@ -443,8 +481,11 @@ let build_test_case vector =
                 ~s_pub:static_pub
             in
             assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
-            let first_msg = List.hd vector.messages in
-
+            let first_msg, transport_messages =
+              match vector.messages with
+              | h::t -> (h, t)
+              | [] -> assert false
+            in
 
             let initiator =
               let rs = get_exn "rs" vector.init_remote_static in
@@ -507,33 +548,20 @@ let build_test_case vector =
               vector.handshake_hash
               initiator_hash;
 
-            let second_message = List.nth vector.messages 1 in
-            let (_, recovered_plaintext) =
-              get_result_exn "transport 1, responder"
-                ( receive_transport_one_way
-                    responder_post_handshake
-                    second_message.ciphertext
+            let _ : state * state * int =
+              List.fold_left
+                (fun (init, resp, i) message ->
+                   let (new_init, new_resp) =
+                     check_one_way_transport_message ~ctxt init resp message i
+                   in
+                   (new_init, new_resp, i+1)
                 )
-            in
-            assert_equal
-              ~cmp:[%eq: Test_helpers.Hex_string.t]
-              ~printer:[%show: Test_helpers.Hex_string.t]
-              ~msg:"First transport message decryption"
-              second_message.payload
-              recovered_plaintext;
-            let (_, generated_ciphertext) =
-              get_result_exn "transport 1, sender"
-                ( send_transport_one_way
-                    initiator_post_handshake
-                    second_message.payload
+                ( initiator_post_handshake
+                , responder_post_handshake
+                , 1
                 )
+                transport_messages
             in
-            assert_equal
-              ~cmp:[%eq: Test_helpers.Hex_string.t]
-              ~printer:[%show: Test_helpers.Hex_string.t]
-              ~msg:"First transport message encryption"
-              second_message.ciphertext
-              generated_ciphertext;
             ()
           end
       end
