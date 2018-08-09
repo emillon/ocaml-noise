@@ -169,23 +169,9 @@ type state =
   ; params : params
   }
 
-let digest_to_string Noise.Hash.SHA256 d =
-  let from_hex_string s =
-    Hex.to_cstruct (`Hex s)
-  in
-  Digestif.SHA256.to_hex d
-  |> from_hex_string
-
-let hash_msg hash input =
-  match hash with
-  | Noise.Hash.SHA256 ->
-    Cstruct.to_string input
-    |> Digestif.SHA256.digest_string
-    |> digest_to_string hash
-
 let mix_hash n data =
   let new_h =
-    hash_msg n.params.hash (Cstruct.concat [n.h; data])
+    Noise.Hash.hash n.params.hash (Cstruct.concat [n.h; data])
   in
   { n with h = new_h }
 
@@ -203,7 +189,7 @@ let prep_h name hash =
     Cstruct.blit buf_name 0 buf 0 name_len;
     buf
   else
-    hash_msg hash buf_name
+    Noise.Hash.hash hash buf_name
 
 let make_responder ~s ~h ~params =
   { re = None
@@ -233,13 +219,6 @@ let initial_set_e n k =
   | None -> { n with e = Some k }
   | Some _ -> failwith "initial_set_e"
 
-let hmac_fun hash ~key data =
-  match hash with
-  | Noise.Hash.SHA256 ->
-    let string_key = Cstruct.to_string key in
-    Digestif.SHA256.hmac_string ~key:string_key (Cstruct.to_string data)
-    |> digest_to_string hash
-
 let hkdf2 params ck input =
   let hash = params.hash in
   let hashlen = Noise.Hash.len hash in
@@ -250,7 +229,7 @@ let hkdf2 params ck input =
     List.mem ikm_length [0; 32; dh_len]
   );
   Noise.Hkdf.hkdf2
-    ~hmac:(hmac_fun hash)
+    ~hmac:(Noise.Hash.hmac hash)
     ~salt:ck
     ~ikm:input
 

@@ -8,3 +8,9 @@ let of_string = function
 
 let len = function
   | SHA256 -> 32
+
+let hash = function
+  | SHA256 -> Hash_sha256.hash
+
+let hmac = function
+  | SHA256 -> Hash_sha256.hmac
