@@ -368,6 +368,9 @@ let build_test_case vector =
     | None -> false
   in
   vector.name >:: fun ctxt ->
+    skip_if
+      (is_some vector.init_psk)
+      "PSK is not supported";
     match params vector with
     | Error e ->
       skip_if true e
@@ -381,9 +384,6 @@ let build_test_case vector =
                ...
                -> e, es
             *)
-            skip_if
-              (is_some vector.init_psk)
-              "PSK is not supported";
             let resp_static = get_exn "resp_static" vector.resp_static in
             let static_pub = get_exn "init_remote_static" vector.init_remote_static in
             let h = prep_h vector.name params.hash in
