@@ -86,7 +86,7 @@ type message =
   { ciphertext : Test_helpers.Hex_string.t
   ; payload : Test_helpers.Hex_string.t
   }
-[@@deriving eq,show,of_yojson]
+[@@deriving of_yojson]
 
 module Public_key = struct
   type t = Noise.Public_key.t
