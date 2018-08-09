@@ -276,9 +276,6 @@ let mix_key n0 input =
   in
   initialize_key n1 (Noise.Private_key.of_bytes truncated_temp_k)
 
-let dh Noise.Dh.Curve_25519 =
-  Noise.Dh_25519.key_exchange
-
 let incr_nonce n =
   (* XXX check overflow *)
   let new_nonce = Int64.succ n.nonce in
@@ -324,11 +321,12 @@ let responder_handle_e n0 msg0 =
   (n2, msg1)
 
 let responder_handle_es n =
+  Noise.Dh.key_exchange
+    n.dh
+    ~priv:(get_exn "s" n.s)
+    ~pub:(get_exn "re" n.re)
+  |>
   mix_key n
-    (dh n.dh
-       ~priv:(get_exn "s" n.s)
-       ~pub:(get_exn "re" n.re)
-    )
 
 let responder_handle_e_es n0 msg0 =
   let (n1, msg1) = responder_handle_e n0 msg0 in
@@ -357,12 +355,11 @@ let init_handle_e n0 epub epriv =
   (n2, Noise.Public_key.bytes epub)
 
 let init_handle_es n =
-  mix_key n
-    (dh
-      n.dh
-       ~priv:(get_exn "e" n.e)
-       ~pub:(get_exn "rs" n.rs)
-    )
+  Noise.Dh.key_exchange
+    n.dh
+    ~priv:(get_exn "e" n.e)
+    ~pub:(get_exn "rs" n.rs)
+  |> mix_key n
 
 let encrypt_with_ad n0 plaintext =
   match n0.k, n0.cipher with

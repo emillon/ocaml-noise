@@ -8,3 +8,6 @@ let of_string = function
 
 let len = function
   | Curve_25519 -> 32
+
+let key_exchange = function
+  | Curve_25519 -> Dh_25519.key_exchange
