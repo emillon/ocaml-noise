@@ -112,12 +112,12 @@ module Private_key = struct
     [%of_yojson: Test_helpers.Hex_string.t] json >|= Noise.Private_key.of_bytes
 end
 
-type ('pattern, 'dh, 'cipher, 'hash) gen_vector =
+type test_vector =
   { name : string
-  ; pattern : 'pattern
-  ; dh : 'dh
-  ; cipher: 'cipher
-  ; hash : 'hash
+  ; pattern : Pattern.t
+  ; dh : Dh.t
+  ; cipher: Cipher.t
+  ; hash : Hash.t
   ; init_prologue : string
   ; init_ephemeral : Private_key.t
   ; init_remote_static : Public_key.t option [@default None]
@@ -133,24 +133,24 @@ type ('pattern, 'dh, 'cipher, 'hash) gen_vector =
   }
 [@@deriving of_yojson]
 
-type test_vector = (Pattern.t, Dh.t, Cipher.t, Hash.t) gen_vector
-[@@deriving of_yojson]
+type params =
+  { pattern : Noise.Pattern.t
+  ; dh : Noise.Dh.t
+  ; cipher : Noise.Cipher.t
+  ; hash : Noise.Hash.t
+  }
 
 type test_vector_file =
   { vectors : test_vector list
   }
 [@@deriving of_yojson]
 
-type supported_test_vector =
-  (Noise.Pattern.t, Noise.Dh.t, Noise.Cipher.t, Noise.Hash.t) gen_vector
-
-let supported : test_vector -> (supported_test_vector, string) result =
-  fun vector ->
-    KU.unwrap "pattern" vector.pattern @@ fun pattern ->
-    KU.unwrap "DH" vector.dh @@ fun dh ->
-    KU.unwrap "cipher" vector.cipher @@ fun cipher ->
-    KU.unwrap "hash" vector.hash @@ fun hash ->
-    Ok { vector with pattern; dh; cipher; hash }
+let params (vector : test_vector) =
+  KU.unwrap "pattern" vector.pattern @@ fun pattern ->
+  KU.unwrap "DH" vector.dh @@ fun dh ->
+  KU.unwrap "cipher" vector.cipher @@ fun cipher ->
+  KU.unwrap "hash" vector.hash @@ fun hash ->
+  Ok { pattern; dh; cipher; hash }
 
 let get_exn msg = function
   | Some x -> x
@@ -166,9 +166,7 @@ type state =
   ; k : Private_key.t option
   ; nonce : int64
   ; handshake_done : bool
-  ; dh : Noise.Dh.t
-  ; hash : Noise.Hash.t
-  ; cipher : Noise.Cipher.t
+  ; params : params
   }
 
 let digest_to_string Noise.Hash.SHA256 d =
@@ -187,7 +185,7 @@ let hash_msg hash input =
 
 let mix_hash n data =
   let new_h =
-    hash_msg n.hash (Cstruct.concat [n.h; data])
+    hash_msg n.params.hash (Cstruct.concat [n.h; data])
   in
   { n with h = new_h }
 
@@ -207,7 +205,7 @@ let prep_h name hash =
   else
     hash_msg hash buf_name
 
-let make_responder ~s ~dh ~hash ~h ~cipher =
+let make_responder ~s ~h ~params =
   { re = None
   ; e = None
   ; s = Some s
@@ -217,13 +215,11 @@ let make_responder ~s ~dh ~hash ~h ~cipher =
   ; k = None
   ; nonce = 0L
   ; handshake_done = false
-  ; dh
-  ; hash
-  ; cipher
+  ; params
   }
 
-let split_dh n msg =
-  let dh_len = Noise.Dh.len n.dh in
+let split_dh params msg =
+  let dh_len = Noise.Dh.len params.dh in
   let (a, b) = Cstruct.split msg dh_len in
   (Noise.Public_key.of_bytes a, b)
 
@@ -244,12 +240,12 @@ let hmac_fun hash ~key data =
     Digestif.SHA256.hmac_string ~key:string_key (Cstruct.to_string data)
     |> digest_to_string hash
 
-let hkdf2 n ck input =
-  let hash = n.hash in
+let hkdf2 params ck input =
+  let hash = params.hash in
   let hashlen = Noise.Hash.len hash in
   assert (Cstruct.len ck = hashlen);
   let ikm_length = Cstruct.len input in
-  let dh_len = Noise.Dh.len n.dh in
+  let dh_len = Noise.Dh.len params.dh in
   assert (
     List.mem ikm_length [0; 32; dh_len]
   );
@@ -266,10 +262,10 @@ let set_ck n ck =
 
 let mix_key n0 input =
   let ck0 = n0.ck in
-  let (ck1, temp_k) = hkdf2 n0 ck0 input in
+  let (ck1, temp_k) = hkdf2 n0.params ck0 input in
   let n1 = set_ck n0 ck1 in
   let truncated_temp_k =
-    if Noise.Hash.len n1.hash = 64 then
+    if Noise.Hash.len n1.params.hash = 64 then
       Cstruct.sub temp_k 0 32
     else
       temp_k
@@ -287,7 +283,7 @@ let nonce_to_buf n =
   buf
 
 let decrypt_with_ad n0 ciphertext_and_tag =
-  match n0.k, n0.cipher with
+  match n0.k, n0.params.cipher with
   | None, _ -> (n0, ciphertext_and_tag)
   | Some k, Noise.Cipher.AES_GCM ->
     let open Nocrypto.Cipher_block.AES.GCM in
@@ -315,14 +311,14 @@ let decrypt_and_hash n0 ciphertext =
   (n1, plaintext)
 
 let responder_handle_e n0 msg0 =
-  let (re, msg1) = split_dh n0 msg0 in
+  let (re, msg1) = split_dh n0.params msg0 in
   let n1 = initial_set_re n0 re in
   let n2 = mix_hash n1 (Noise.Public_key.bytes re) in
   (n2, msg1)
 
 let responder_handle_es n =
   Noise.Dh.key_exchange
-    n.dh
+    n.params.dh
     ~priv:(get_exn "s" n.s)
     ~pub:(get_exn "re" n.re)
   |>
@@ -334,10 +330,8 @@ let responder_handle_e_es n0 msg0 =
   let (n3, payload) = decrypt_and_hash n2 msg1 in
   (n3, payload)
 
-let make_init ~dh ~hash ~h ~rs ~cipher =
+let make_init ~h ~rs ~params =
   { h
-  ; dh
-  ; hash
   ; re = None
   ; e = None
   ; s = None
@@ -346,7 +340,7 @@ let make_init ~dh ~hash ~h ~rs ~cipher =
   ; nonce = 0L
   ; k = None
   ; handshake_done = false
-  ; cipher
+  ; params
   }
 
 let init_handle_e n0 epub epriv =
@@ -356,13 +350,13 @@ let init_handle_e n0 epub epriv =
 
 let init_handle_es n =
   Noise.Dh.key_exchange
-    n.dh
+    n.params.dh
     ~priv:(get_exn "e" n.e)
     ~pub:(get_exn "rs" n.rs)
   |> mix_key n
 
 let encrypt_with_ad n0 plaintext =
-  match n0.k, n0.cipher with
+  match n0.k, n0.params.cipher with
   | None, _ -> (n0, plaintext)
   | Some k, Noise.Cipher.AES_GCM ->
     let open Nocrypto.Cipher_block.AES.GCM in
@@ -391,12 +385,12 @@ let build_test_case vector =
     | None -> false
   in
   vector.name >:: fun ctxt ->
-    match supported vector with
+    match params vector with
     | Error e ->
       skip_if true e
-    | Ok vector ->
+    | Ok params ->
       begin
-        match vector.pattern with
+        match params.pattern with
         | N ->
           begin
             (* N:
@@ -409,13 +403,11 @@ let build_test_case vector =
               "PSK is not supported";
             let resp_static = get_exn "resp_static" vector.resp_static in
             let static_pub = get_exn "init_remote_static" vector.init_remote_static in
-            let h = prep_h vector.name vector.hash in
+            let h = prep_h vector.name params.hash in
             let responder =
               make_responder
                 ~s:resp_static
-                ~dh:vector.dh
-                ~hash:vector.hash
-                ~cipher:vector.cipher
+                ~params
                 ~h
                 |> init_public_data
                   ~prologue:vector.resp_prologue
@@ -428,16 +420,14 @@ let build_test_case vector =
             let initiator =
               let rs = get_exn "rs" vector.init_remote_static in
               make_init
-                ~dh:vector.dh
-                ~hash:vector.hash
                 ~h
                 ~rs
-                ~cipher:vector.cipher
+                ~params
               |> init_public_data
                 ~prologue:vector.resp_prologue
                 ~s_pub:rs
             in
-            let (epub, _) = split_dh initiator first_msg.ciphertext in
+            let (epub, _) = split_dh initiator.params first_msg.ciphertext in
             assert (Noise.Dh_25519.corresponds ~pub:epub
                       ~priv:vector.init_ephemeral);
             let (n1, _) =
