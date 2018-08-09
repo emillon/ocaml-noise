@@ -150,7 +150,7 @@ let get_exn msg = function
 
 let get_result_exn msg = function
   | Ok x -> x
-  | Error _ -> Printf.ksprintf invalid_arg "get_result_exn: %s" msg
+  | Error e -> Printf.ksprintf invalid_arg "get_result_exn: %s (%s)" msg e
 
 type state =
   { re : Public_key.t option
@@ -159,9 +159,9 @@ type state =
   ; s : Private_key.t option
   ; ck : Cstruct.t
   ; h : Cstruct.t
-  ; handshake_done : bool
   ; params : params
   ; cipher_state : Noise.Cipher_state.t
+  ; transport : Noise.Cipher_state.t option
   }
 
 let mix_hash n data =
@@ -193,9 +193,9 @@ let make_responder ~s ~h ~params =
   ; rs = None
   ; ck = h
   ; h
-  ; handshake_done = false
   ; params
   ; cipher_state = Noise.Cipher_state.Empty
+  ; transport = None
   }
 
 let split_dh params msg =
@@ -235,47 +235,58 @@ let initialize_key n key =
 let set_ck n ck =
   { n with ck }
 
+let truncate_if_hash_64 hash input =
+  if Noise.Hash.len hash = 64 then
+    Cstruct.sub input 0 32
+  else
+    input
+
 let mix_key n0 input =
   let ck0 = n0.ck in
   let (ck1, temp_k) = hkdf2 n0.params ck0 input in
   let n1 = set_ck n0 ck1 in
-  let truncated_temp_k =
-    if Noise.Hash.len n1.params.hash = 64 then
-      Cstruct.sub temp_k 0 32
-    else
-      temp_k
-  in
+  let truncated_temp_k = truncate_if_hash_64 n1.params.hash temp_k in
   initialize_key n1 (Noise.Private_key.of_bytes truncated_temp_k)
-
-let incr_nonce n =
-  { n with
-    cipher_state = Noise.Cipher_state.incr_nonce n.cipher_state
-  }
 
 let (>>=) x f =
   match x with
   | Ok x -> f x
   | Error _ as e -> e
 
-let decrypt_with_ad n0 ciphertext_and_tag =
-  match n0.cipher_state with
-  | Empty -> Ok (n0, ciphertext_and_tag)
+let decrypt_with_ad_cs cipher_state ~ad cipher ciphertext_and_tag =
+  let open Noise.Cipher_state in
+  match cipher_state with
+  | Empty -> Ok (cipher_state, ciphertext_and_tag)
   | Depleted -> Error "Nonce depleted"
   | Ready {key; nonce} ->
     let decrypt_result =
       Noise.Cipher.decrypt_with_ad
-        n0.params.cipher
+        cipher
         ~key
         ~nonce
-        ~ad:n0.h
+        ~ad
         ciphertext_and_tag
     in
     decrypt_result >>= fun plaintext ->
-    let n1 = incr_nonce n0 in
-    Ok (n1, plaintext)
+    let new_cs = incr_nonce cipher_state in
+    Ok (new_cs, plaintext)
+
+let decrypt_with_ad n0 ciphertext_and_tag =
+  decrypt_with_ad_cs
+    n0.cipher_state
+    ~ad:n0.h
+    n0.params.cipher
+    ciphertext_and_tag
+  >>= fun (new_cs, plaintext) ->
+  let n1 = {n0 with cipher_state = new_cs} in
+  Ok (n1, plaintext)
+
+let is_some = function
+  | Some _ -> true
+  | None -> false
 
 let get_handshake n =
-  assert n.handshake_done;
+  assert (is_some n.transport);
   n.h
 
 let decrypt_and_hash n0 ciphertext =
@@ -297,11 +308,21 @@ let responder_handle_es n =
   |>
   mix_key n
 
+let split_one_way n0 =
+  let (temp_k1, _) = hkdf2 n0.params n0.ck Cstruct.empty in
+  let temp_k1 = truncate_if_hash_64 n0.params.hash temp_k1 in
+  let transport_key1 = Noise.Private_key.of_bytes temp_k1 in
+  Noise.Cipher_state.create transport_key1
+
+let setup_transport_one_way n0 =
+  { n0 with transport = Some (split_one_way n0) }
+
 let responder_handle_e_es n0 msg0 =
   let (n1, msg1) = responder_handle_e n0 msg0 in
   let n2 = responder_handle_es n1 in
   decrypt_and_hash n2 msg1 >>= fun (n3, payload) ->
-  Ok (n3, payload)
+  let n4 = setup_transport_one_way n3 in
+  Ok (n4, payload)
 
 let make_init ~h ~rs ~params =
   { h
@@ -310,9 +331,9 @@ let make_init ~h ~rs ~params =
   ; s = None
   ; rs = Some rs
   ; ck = h
-  ; handshake_done = false
   ; params
   ; cipher_state = Noise.Cipher_state.Empty
+  ; transport = None
   }
 
 let init_handle_e n0 epub epriv =
@@ -327,22 +348,33 @@ let init_handle_es n =
     ~pub:(get_exn "rs" n.rs)
   |> mix_key n
 
-let encrypt_with_ad n0 plaintext =
-  match n0.cipher_state with
-  | Empty -> Ok (n0, plaintext)
+let encrypt_with_ad_cs cipher_state ~ad cipher plaintext =
+  let open Noise.Cipher_state in
+  match cipher_state with
+  | Empty -> Ok (cipher_state, plaintext)
   | Depleted -> Error "Nonce depleted"
   | Ready {key; nonce} ->
     let encrypt_result =
       Noise.Cipher.encrypt_with_ad
-        n0.params.cipher
+        cipher
         ~key
         ~nonce
-        ~ad:n0.h
+        ~ad
         plaintext
     in
     encrypt_result >>= fun ciphertext_and_tag ->
-    let n1 = incr_nonce n0 in
-    Ok (n1, ciphertext_and_tag)
+    let new_cs = incr_nonce cipher_state in
+    Ok (new_cs, ciphertext_and_tag)
+
+let encrypt_with_ad n0 plaintext =
+  encrypt_with_ad_cs
+    n0.cipher_state
+    ~ad:n0.h
+    n0.params.cipher
+    plaintext
+  >>= fun (new_cs, ciphertext) ->
+  let n1 = {n0 with cipher_state = new_cs } in
+  Ok (n1, ciphertext)
 
 let encrypt_and_hash n0 payload =
   encrypt_with_ad n0 payload >>= fun (n1, ciphertext) ->
@@ -353,13 +385,34 @@ let init_handle_e_es n0 payload epub epriv =
   let (n1, msg0) = init_handle_e n0 epub epriv in
   let n2 = init_handle_es n1 in
   encrypt_and_hash n2 payload >>= fun (n3, msg1) ->
-  Ok (n3, Cstruct.concat [msg0; msg1])
+  let result = Cstruct.concat [msg0; msg1] in
+  let n4 = setup_transport_one_way n3 in
+  Ok (n4, result)
+
+let with_transport_one_way n0 k =
+  match n0.transport with
+  | Some cipher_state ->
+    k cipher_state
+  | None ->
+    Error "Handshake not finished"
+
+let receive_transport_one_way n0 ciphertext =
+  with_transport_one_way n0 @@ fun cipher_state ->
+  decrypt_with_ad_cs
+    cipher_state
+    ~ad:Cstruct.empty
+    n0.params.cipher
+    ciphertext
+
+let send_transport_one_way n0 plaintext =
+  with_transport_one_way n0 @@ fun cipher_state ->
+  encrypt_with_ad_cs
+    cipher_state
+    ~ad:Cstruct.empty
+    n0.params.cipher
+    plaintext
 
 let build_test_case vector =
-  let is_some = function
-    | Some _ -> true
-    | None -> false
-  in
   vector.name >:: fun ctxt ->
     skip_if
       (is_some vector.init_psk)
@@ -407,31 +460,81 @@ let build_test_case vector =
             assert (Noise.Dh_25519.corresponds ~pub:epub
                       ~priv:vector.init_ephemeral);
 
-            let initiator_result =
+            let initiator_post_handshake =
               init_handle_e_es
                 initiator
                 first_msg.payload
                 epub
                 vector.init_ephemeral
               >>= fun (n1, _) ->
-              let final = {n1 with handshake_done = true} in
-              Ok (final.cipher_state, get_handshake final)
+              Ok n1
             in
+            let initiator_post_handshake =
+              get_result_exn "initiator_post_handshake" initiator_post_handshake
+            in
+            let initiator_post_hs_cipher = initiator_post_handshake.cipher_state in
+            let initiator_hash = get_handshake initiator_post_handshake in
 
-            let responder_result =
+            let responder_post_handshake =
               responder_handle_e_es responder first_msg.ciphertext
               >>= fun (n1, (_:Cstruct.t)) ->
-              let final_resp = {n1 with handshake_done = true} in
-              Ok (final_resp.cipher_state, get_handshake final_resp)
+              Ok n1
             in
+            let responder_post_handshake =
+              get_result_exn "responder_post_handshake" responder_post_handshake
+            in
+            let responder_post_hs_cipher = responder_post_handshake.cipher_state in
+            let responder_hash = get_handshake responder_post_handshake in
 
             assert_equal
               ~ctxt
-              ~cmp:[%eq: Noise.Cipher_state.t * Test_helpers.Hex_string.t]
-              ~printer:[%show: Noise.Cipher_state.t * Test_helpers.Hex_string.t]
+              ~cmp:[%eq: Noise.Cipher_state.t]
+              ~printer:[%show: Noise.Cipher_state.t]
               ~msg:"Final states should be equal"
-              (get_result_exn "initiator" initiator_result)
-              (get_result_exn "responder" responder_result)
+              initiator_post_hs_cipher
+              responder_post_hs_cipher;
+            assert_equal
+              ~ctxt
+              ~cmp:[%eq: Test_helpers.Hex_string.t]
+              ~printer:[%show: Test_helpers.Hex_string.t]
+              ~msg:"Handshake hashes should match"
+              initiator_hash
+              responder_hash;
+            assert_equal
+              ~cmp:[%eq: Test_helpers.Hex_string.t]
+              ~printer:[%show: Test_helpers.Hex_string.t]
+              ~msg:"Handshake hash should match the vector"
+              vector.handshake_hash
+              initiator_hash;
+
+            let second_message = List.nth vector.messages 1 in
+            let (_, recovered_plaintext) =
+              get_result_exn "transport 1, responder"
+                ( receive_transport_one_way
+                    responder_post_handshake
+                    second_message.ciphertext
+                )
+            in
+            assert_equal
+              ~cmp:[%eq: Test_helpers.Hex_string.t]
+              ~printer:[%show: Test_helpers.Hex_string.t]
+              ~msg:"First transport message decryption"
+              second_message.payload
+              recovered_plaintext;
+            let (_, generated_ciphertext) =
+              get_result_exn "transport 1, sender"
+                ( send_transport_one_way
+                    initiator_post_handshake
+                    second_message.payload
+                )
+            in
+            assert_equal
+              ~cmp:[%eq: Test_helpers.Hex_string.t]
+              ~printer:[%show: Test_helpers.Hex_string.t]
+              ~msg:"First transport message encryption"
+              second_message.ciphertext
+              generated_ciphertext;
+            ()
           end
       end
 
