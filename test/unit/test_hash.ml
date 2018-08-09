@@ -13,6 +13,7 @@ let test_of_string =
   in
   "of_string" >:::
   [ "SHA256" >:= should_be (Ok SHA256)
+  ; "SHA512" >:= should_be (Ok SHA512)
   ]
 
 let test_len =
@@ -27,6 +28,7 @@ let test_len =
   in
   "len" >:::
   [ "SHA256" >:: test SHA256 32
+  ; "SHA512" >:: test SHA512 64
   ]
 
 let suite =
