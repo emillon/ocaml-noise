@@ -156,6 +156,10 @@ let get_exn msg = function
   | Some x -> x
   | None -> Printf.ksprintf invalid_arg "get_exn: %s" msg
 
+let get_result_exn msg = function
+  | Ok x -> x
+  | Error _ -> Printf.ksprintf invalid_arg "get_result_exn: %s" msg
+
 type state =
   { re : Public_key.t option
   ; e : Private_key.t option
@@ -256,38 +260,35 @@ let incr_nonce n =
   let new_nonce = Int64.succ n.nonce in
   { n with nonce = new_nonce }
 
-let nonce_to_buf n =
-  let buf = Cstruct.create 12 in
-  Cstruct.BE.set_uint64 buf 4 n;
-  buf
+let (>>=) x f =
+  match x with
+  | Ok x -> f x
+  | Error _ as e -> e
 
 let decrypt_with_ad n0 ciphertext_and_tag =
-  match n0.k, n0.params.cipher with
-  | None, _ -> (n0, ciphertext_and_tag)
-  | Some k, Noise.Cipher.AES_GCM ->
-    let open Nocrypto.Cipher_block.AES.GCM in
-    let private_bytes = Noise.Private_key.bytes k in
-    let key = of_secret private_bytes in
-    let iv = nonce_to_buf n0.nonce in
-    let adata = n0.h in
-    let tag_len = 128/8 in
-    let ciphertext_len = Cstruct.len ciphertext_and_tag - tag_len in
-    let (ciphertext, tag) = Cstruct.split ciphertext_and_tag ciphertext_len in
-    let result = decrypt ~key ~adata ~iv ciphertext in
-    assert (Cstruct.len result.tag = Cstruct.len tag);
-    assert (Cstruct.equal result.tag tag);
-    let plaintext = result.message in
+  match n0.k with
+  | None -> Ok (n0, ciphertext_and_tag)
+  | Some key ->
+    let decrypt_result =
+      Noise.Cipher.decrypt_with_ad
+        n0.params.cipher
+        ~key
+        ~nonce:n0.nonce
+        ~ad:n0.h
+        ciphertext_and_tag
+    in
+    decrypt_result >>= fun plaintext ->
     let n1 = incr_nonce n0 in
-    (n1, plaintext)
+    Ok (n1, plaintext)
 
 let get_handshake n =
   assert n.handshake_done;
   n.h
 
 let decrypt_and_hash n0 ciphertext =
-  let plaintext = decrypt_with_ad n0 ciphertext in
-  let n1 = mix_hash n0 ciphertext in
-  (n1, plaintext)
+  decrypt_with_ad n0 ciphertext >>= fun (n1, plaintext) ->
+  let n2 = mix_hash n1 ciphertext in
+  Ok (n2, plaintext)
 
 let responder_handle_e n0 msg0 =
   let (re, msg1) = split_dh n0.params msg0 in
@@ -306,8 +307,8 @@ let responder_handle_es n =
 let responder_handle_e_es n0 msg0 =
   let (n1, msg1) = responder_handle_e n0 msg0 in
   let n2 = responder_handle_es n1 in
-  let (n3, payload) = decrypt_and_hash n2 msg1 in
-  (n3, payload)
+  decrypt_and_hash n2 msg1 >>= fun (n3, payload) ->
+  Ok (n3, payload)
 
 let make_init ~h ~rs ~params =
   { h
@@ -335,28 +336,31 @@ let init_handle_es n =
   |> mix_key n
 
 let encrypt_with_ad n0 plaintext =
-  match n0.k, n0.params.cipher with
-  | None, _ -> (n0, plaintext)
-  | Some k, Noise.Cipher.AES_GCM ->
-    let open Nocrypto.Cipher_block.AES.GCM in
-    let private_bytes = Noise.Private_key.bytes k in
-    let key = of_secret private_bytes in
-    let adata = n0.h in
-    let iv = nonce_to_buf n0.nonce in
-    let result = encrypt ~key ~adata ~iv plaintext in
+  match n0.k with
+  | None -> Ok (n0, plaintext)
+  | Some key ->
+    let encrypt_result =
+      Noise.Cipher.encrypt_with_ad
+        n0.params.cipher
+        ~key
+        ~nonce:n0.nonce
+        ~ad:n0.h
+        plaintext
+    in
+    encrypt_result >>= fun ciphertext_and_tag ->
     let n1 = incr_nonce n0 in
-    (n1, Cstruct.concat [result.message; result.tag])
+    Ok (n1, ciphertext_and_tag)
 
 let encrypt_and_hash n0 payload =
-  let (n1, ciphertext) = encrypt_with_ad n0 payload in
+  encrypt_with_ad n0 payload >>= fun (n1, ciphertext) ->
   let n2 = mix_hash n1 ciphertext in
-  (n2, ciphertext)
+  Ok (n2, ciphertext)
 
 let init_handle_e_es n0 payload epub epriv =
   let (n1, msg0) = init_handle_e n0 epub epriv in
   let n2 = init_handle_es n1 in
-  let (n3, msg1) = encrypt_and_hash n2 payload in
-  (n3, Cstruct.concat [msg0; msg1])
+  encrypt_and_hash n2 payload >>= fun (n3, msg1) ->
+  Ok (n3, Cstruct.concat [msg0; msg1])
 
 let build_test_case vector =
   let is_some = function
@@ -409,33 +413,32 @@ let build_test_case vector =
             let (epub, _) = split_dh initiator.params first_msg.ciphertext in
             assert (Noise.Dh_25519.corresponds ~pub:epub
                       ~priv:vector.init_ephemeral);
-            let (n1, _) =
+
+            let initiator_result =
               init_handle_e_es
                 initiator
                 first_msg.payload
                 epub
                 vector.init_ephemeral
+              >>= fun (n1, _) ->
+              let final = {n1 with handshake_done = true} in
+              Ok (final.k, get_handshake final)
             in
-            let final_init = {n1 with handshake_done = true} in
 
-            let (n1, _) = responder_handle_e_es responder first_msg.ciphertext in
-            let final_resp = {n1 with handshake_done = true} in
-
-            assert_equal
-              ~ctxt
-              ~cmp:[%eq: Private_key.t option]
-              ~printer:[%show: Private_key.t option]
-              ~msg:"keys should be equal"
-              final_resp.k
-              final_init.k;
+            let responder_result =
+              responder_handle_e_es responder first_msg.ciphertext
+              >>= fun (n1, (_:Cstruct.t)) ->
+              let final_resp = {n1 with handshake_done = true} in
+              Ok (final_resp.k, get_handshake final_resp)
+            in
 
             assert_equal
               ~ctxt
-              ~cmp:[%eq: Test_helpers.Hex_string.t]
-              ~printer:[%show: Test_helpers.Hex_string.t]
-              ~msg:"handshakes should be equal"
-              (get_handshake final_resp)
-              (get_handshake final_init)
+              ~cmp:[%eq: Private_key.t option * Test_helpers.Hex_string.t]
+              ~printer:[%show: Private_key.t option * Test_helpers.Hex_string.t]
+              ~msg:"Final states should be equal"
+              (get_result_exn "initiator" initiator_result)
+              (get_result_exn "responder" responder_result)
           end
       end
 

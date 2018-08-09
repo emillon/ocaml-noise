@@ -1,11 +1,6 @@
-type t =
-  | AES_GCM
-[@@deriving eq,show]
-
-val of_string : string -> (t, string) result
+val iv : nonce:int64 -> Cstruct.t
 
 val encrypt_with_ad :
-  t ->
   key:Private_key.t ->
   nonce:int64 ->
   ad:Cstruct.t ->
@@ -13,7 +8,6 @@ val encrypt_with_ad :
   (Cstruct.t, string) result
 
 val decrypt_with_ad :
-  t ->
   key:Private_key.t ->
   nonce:int64 ->
   ad:Cstruct.t ->
