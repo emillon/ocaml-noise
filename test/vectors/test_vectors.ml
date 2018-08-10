@@ -354,6 +354,7 @@ let encrypt_and_hash n0 payload =
   Ok (n2, ciphertext)
 
 let init_handle_e_es n0 payload epub epriv =
+  assert (Noise.Dh_25519.corresponds ~pub:epub ~priv:epriv);
   let (n1, msg0) = init_handle_e n0 epub epriv in
   let n2 = init_handle_es n1 in
   encrypt_and_hash n2 payload >>= fun (n3, msg1) ->
@@ -422,6 +423,44 @@ let check_one_way_transport_message ~ctxt initiator responder message n =
     generated_ciphertext;
   (new_init, new_resp)
 
+let initiator_handshake = function
+  | Noise.Pattern.N -> init_handle_e_es
+
+let responder_handshake = function
+  | Noise.Pattern.N -> responder_handle_e_es
+
+let make_responder_from_vector params vector =
+  match params.pattern with
+  | Noise.Pattern.N ->
+    let h = prep_h vector.name params.hash in
+    let resp_static = get_exn "resp_static" vector.resp_static in
+    let static_pub = get_exn "init_remote_static" vector.init_remote_static in
+    assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
+    make_responder
+      ~s:resp_static
+      ~params
+      ~h
+    |> init_public_data
+      ~prologue:vector.resp_prologue
+      ~s_pub:static_pub
+
+let make_initiator_from_vector params vector =
+  match params.pattern with
+  | Noise.Pattern.N ->
+    let rs = get_exn "rs" vector.init_remote_static in
+    let h = prep_h vector.name params.hash in
+    make_init
+      ~h
+      ~rs
+      ~params
+    |> init_public_data
+      ~prologue:vector.resp_prologue
+      ~s_pub:rs
+
+let hd_tl_exn = function
+  | hd::tl -> (hd, tl)
+  | [] -> assert false
+
 let build_test_case vector =
   vector.name >:: fun ctxt ->
     skip_if
@@ -431,112 +470,74 @@ let build_test_case vector =
     | Error e ->
       skip_if true e
     | Ok params ->
-      begin
-        match params.pattern with
-        | N ->
-          begin
-            (* N:
-               <- s
-               ...
-               -> e, es
-            *)
-            let resp_static = get_exn "resp_static" vector.resp_static in
-            let static_pub = get_exn "init_remote_static" vector.init_remote_static in
-            let h = prep_h vector.name params.hash in
-            let responder =
-              make_responder
-                ~s:resp_static
-                ~params
-                ~h
-                |> init_public_data
-                  ~prologue:vector.resp_prologue
-                ~s_pub:static_pub
-            in
-            assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
-            let first_msg, transport_messages =
-              match vector.messages with
-              | h::t -> (h, t)
-              | [] -> assert false
-            in
+      let responder = make_responder_from_vector params vector in
+      let first_msg, transport_messages = hd_tl_exn vector.messages in
+      let initiator = make_initiator_from_vector params vector in
+      let (epub, _) = split_dh initiator.params first_msg.ciphertext in
 
-            let initiator =
-              let rs = get_exn "rs" vector.init_remote_static in
-              make_init
-                ~h
-                ~rs
-                ~params
-              |> init_public_data
-                ~prologue:vector.resp_prologue
-                ~s_pub:rs
-            in
-            let (epub, _) = split_dh initiator.params first_msg.ciphertext in
-            assert (Noise.Dh_25519.corresponds ~pub:epub
-                      ~priv:vector.init_ephemeral);
+      let initiator_post_handshake =
+        initiator_handshake
+          params.pattern
+          initiator
+          first_msg.payload
+          epub
+          vector.init_ephemeral
+        >>= fun (n1, _) ->
+        Ok n1
+      in
+      let initiator_post_handshake =
+        get_result_exn "initiator_post_handshake" initiator_post_handshake
+      in
+      let initiator_post_hs_cipher = initiator_post_handshake.cipher_state in
+      let initiator_hash = get_handshake initiator_post_handshake in
 
-            let initiator_post_handshake =
-              init_handle_e_es
-                initiator
-                first_msg.payload
-                epub
-                vector.init_ephemeral
-              >>= fun (n1, _) ->
-              Ok n1
-            in
-            let initiator_post_handshake =
-              get_result_exn "initiator_post_handshake" initiator_post_handshake
-            in
-            let initiator_post_hs_cipher = initiator_post_handshake.cipher_state in
-            let initiator_hash = get_handshake initiator_post_handshake in
+      let responder_post_handshake =
+        responder_handshake params.pattern responder first_msg.ciphertext
+        >>= fun (n1, (_:Cstruct.t)) ->
+        Ok n1
+      in
+      let responder_post_handshake =
+        get_result_exn "responder_post_handshake" responder_post_handshake
+      in
+      let responder_post_hs_cipher = responder_post_handshake.cipher_state in
+      let responder_hash = get_handshake responder_post_handshake in
 
-            let responder_post_handshake =
-              responder_handle_e_es responder first_msg.ciphertext
-              >>= fun (n1, (_:Cstruct.t)) ->
-              Ok n1
-            in
-            let responder_post_handshake =
-              get_result_exn "responder_post_handshake" responder_post_handshake
-            in
-            let responder_post_hs_cipher = responder_post_handshake.cipher_state in
-            let responder_hash = get_handshake responder_post_handshake in
+      assert_equal
+        ~ctxt
+        ~cmp:[%eq: Noise.Cipher_state.t]
+        ~printer:[%show: Noise.Cipher_state.t]
+        ~msg:"Final states should be equal"
+        initiator_post_hs_cipher
+        responder_post_hs_cipher;
+      assert_equal
+        ~ctxt
+        ~cmp:[%eq: Test_helpers.Hex_string.t]
+        ~printer:[%show: Test_helpers.Hex_string.t]
+        ~msg:"Handshake hashes should match"
+        initiator_hash
+        responder_hash;
+      assert_equal
+        ~cmp:[%eq: Test_helpers.Hex_string.t]
+        ~printer:[%show: Test_helpers.Hex_string.t]
+        ~msg:"Handshake hash should match the vector"
+        vector.handshake_hash
+        initiator_hash;
 
-            assert_equal
-              ~ctxt
-              ~cmp:[%eq: Noise.Cipher_state.t]
-              ~printer:[%show: Noise.Cipher_state.t]
-              ~msg:"Final states should be equal"
-              initiator_post_hs_cipher
-              responder_post_hs_cipher;
-            assert_equal
-              ~ctxt
-              ~cmp:[%eq: Test_helpers.Hex_string.t]
-              ~printer:[%show: Test_helpers.Hex_string.t]
-              ~msg:"Handshake hashes should match"
-              initiator_hash
-              responder_hash;
-            assert_equal
-              ~cmp:[%eq: Test_helpers.Hex_string.t]
-              ~printer:[%show: Test_helpers.Hex_string.t]
-              ~msg:"Handshake hash should match the vector"
-              vector.handshake_hash
-              initiator_hash;
-
-            let _ : state * state * int =
-              List.fold_left
-                (fun (init, resp, i) message ->
-                   let (new_init, new_resp) =
-                     check_one_way_transport_message ~ctxt init resp message i
-                   in
-                   (new_init, new_resp, i+1)
-                )
-                ( initiator_post_handshake
-                , responder_post_handshake
-                , 1
-                )
-                transport_messages
-            in
-            ()
-          end
-      end
+      let _ : state * state * int =
+        List.fold_left
+          (fun (init, resp, i) message ->
+             let (new_init, new_resp) =
+               check_one_way_transport_message ~ctxt init resp message i
+             in
+             (new_init, new_resp, i+1)
+          )
+          ( initiator_post_handshake
+          , responder_post_handshake
+          , 1
+          )
+          transport_messages
+      in
+      ()
 
 let run path =
   let json = Yojson.Safe.from_file path in
