@@ -7,18 +7,32 @@ type t =
   | Depleted
 [@@deriving eq,show]
 
-let create key =
+let empty = Empty
+
+let create ?unsafe_nonce:(nonce=0L) key =
   Ready
     { key
-    ; nonce = 0L
+    ; nonce
     }
 
-let incr_nonce = function
-  | Empty -> Empty
+let depleted = Depleted
+
+let (>>|) x f =
+  match x with
+  | Ok x -> Ok (f x)
+  | Error _ as e -> e
+
+let with_ t f x =
+  match t with
+  | Empty -> Ok (t, x)
   | Ready params ->
-    let new_nonce = Int64.succ params.nonce in
-    if new_nonce = 0xff_ff_ff_ff_ff_ff_ff_ffL then
-      Depleted
-    else
-      Ready { params with nonce = new_nonce }
-  | Depleted -> Depleted
+    f ~key:params.key ~nonce:params.nonce x >>| fun r ->
+    let new_cs =
+      let new_nonce = Int64.succ params.nonce in
+      if new_nonce = 0xff_ff_ff_ff_ff_ff_ff_ffL then
+        Depleted
+      else
+        Ready { params with nonce = new_nonce }
+    in
+    (new_cs, r)
+  | Depleted -> Error "Nonce depleted"

@@ -194,7 +194,7 @@ let make_responder ~s ~h ~params =
   ; ck = h
   ; h
   ; params
-  ; cipher_state = Noise.Cipher_state.Empty
+  ; cipher_state = Noise.Cipher_state.empty
   ; transport = None
   }
 
@@ -253,23 +253,9 @@ let (>>=) x f =
   | Ok x -> f x
   | Error _ as e -> e
 
-let decrypt_with_ad_cs cipher_state ~ad cipher ciphertext_and_tag =
-  let open Noise.Cipher_state in
-  match cipher_state with
-  | Empty -> Ok (cipher_state, ciphertext_and_tag)
-  | Depleted -> Error "Nonce depleted"
-  | Ready {key; nonce} ->
-    let decrypt_result =
-      Noise.Cipher.decrypt_with_ad
-        cipher
-        ~key
-        ~nonce
-        ~ad
-        ciphertext_and_tag
-    in
-    decrypt_result >>= fun plaintext ->
-    let new_cs = incr_nonce cipher_state in
-    Ok (new_cs, plaintext)
+let decrypt_with_ad_cs cipher_state ~ad cipher =
+  Noise.Cipher_state.with_ cipher_state
+    (Noise.Cipher.decrypt_with_ad cipher ~ad)
 
 let decrypt_with_ad n0 ciphertext_and_tag =
   decrypt_with_ad_cs
@@ -332,7 +318,7 @@ let make_init ~h ~rs ~params =
   ; rs = Some rs
   ; ck = h
   ; params
-  ; cipher_state = Noise.Cipher_state.Empty
+  ; cipher_state = Noise.Cipher_state.empty
   ; transport = None
   }
 
@@ -348,23 +334,9 @@ let init_handle_es n =
     ~pub:(get_exn "rs" n.rs)
   |> mix_key n
 
-let encrypt_with_ad_cs cipher_state ~ad cipher plaintext =
-  let open Noise.Cipher_state in
-  match cipher_state with
-  | Empty -> Ok (cipher_state, plaintext)
-  | Depleted -> Error "Nonce depleted"
-  | Ready {key; nonce} ->
-    let encrypt_result =
-      Noise.Cipher.encrypt_with_ad
-        cipher
-        ~key
-        ~nonce
-        ~ad
-        plaintext
-    in
-    encrypt_result >>= fun ciphertext_and_tag ->
-    let new_cs = incr_nonce cipher_state in
-    Ok (new_cs, ciphertext_and_tag)
+let encrypt_with_ad_cs cipher_state ~ad cipher =
+  Noise.Cipher_state.with_ cipher_state
+    (Noise.Cipher.encrypt_with_ad cipher ~ad)
 
 let encrypt_with_ad n0 plaintext =
   encrypt_with_ad_cs
