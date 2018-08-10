@@ -118,10 +118,10 @@ type test_vector =
   ; messages : message list
   ; handshake_hash : Test_helpers.Hex_string.t
   ; init_psk : string option [@default None]
-  ; init_static : string option [@default None]
+  ; init_static : Private_key.t option [@default None]
   ; resp_ephemeral : string option [@default None]
   ; resp_psk : string option [@default None]
-  ; resp_remote_static : string option [@default None]
+  ; resp_remote_static : Public_key.t option [@default None]
   }
 [@@deriving of_yojson]
 
@@ -170,10 +170,11 @@ let mix_hash n data =
   in
   { n with h = new_h }
 
-let init_public_data n0 ~prologue ~s_pub =
-  let n1 = mix_hash n0 prologue in
-  let n2 = mix_hash n1 (Noise.Public_key.bytes s_pub) in
-  n2
+let init_public_data n0 ~prologue ~pre_public_keys =
+  List.fold_left
+    mix_hash
+    n0
+    (prologue::List.map Noise.Public_key.bytes pre_public_keys)
 
 let prep_h name hash =
   let buf_name = Cstruct.of_string name in
@@ -185,18 +186,6 @@ let prep_h name hash =
     buf
   else
     Noise.Hash.hash hash buf_name
-
-let make_responder ~s ~h ~params =
-  { re = None
-  ; e = None
-  ; s = Some s
-  ; rs = None
-  ; ck = h
-  ; h
-  ; params
-  ; cipher_state = Noise.Cipher_state.empty
-  ; transport = None
-  }
 
 let split_dh params msg =
   let dh_len = Noise.Dh.len params.dh in
@@ -294,6 +283,14 @@ let responder_handle_es n =
   |>
   mix_key n
 
+let handle_ss n =
+  Noise.Dh.key_exchange
+    n.params.dh
+    ~priv:(get_exn "s" n.s)
+    ~pub:(get_exn "rs" n.rs)
+  |>
+  mix_key n
+
 let split_one_way n0 =
   let (temp_k1, _) = hkdf2 n0.params n0.ck Cstruct.empty in
   let temp_k1 = truncate_if_hash_64 n0.params.hash temp_k1 in
@@ -310,19 +307,28 @@ let responder_handle_e_es n0 msg0 =
   let n4 = setup_transport_one_way n3 in
   Ok (n4, payload)
 
-let make_init ~h ~rs ~params =
-  { h
-  ; re = None
+let responder_handle_e_es_ss n0 msg0 =
+  let (n1, msg1) = responder_handle_e n0 msg0 in
+  let n2 = responder_handle_es n1 in
+  let n3 = handle_ss n2 in
+  decrypt_and_hash n3 msg1 >>= fun (n4, payload) ->
+  let n5 = setup_transport_one_way n4 in
+  Ok (n5, payload)
+
+let make_state ~h ~params ~s ~rs =
+  { re = None
   ; e = None
-  ; s = None
-  ; rs = Some rs
+  ; s
+  ; rs
   ; ck = h
+  ; h
   ; params
   ; cipher_state = Noise.Cipher_state.empty
   ; transport = None
   }
 
 let init_handle_e n0 epub epriv =
+  assert (Noise.Dh_25519.corresponds ~pub:epub ~priv:epriv);
   let n1 = initial_set_e n0 epriv in
   let n2 = mix_hash n1 (Noise.Public_key.bytes epub) in
   (n2, Noise.Public_key.bytes epub)
@@ -353,14 +359,23 @@ let encrypt_and_hash n0 payload =
   let n2 = mix_hash n1 ciphertext in
   Ok (n2, ciphertext)
 
+let init_finish_one_way n0 payload =
+  encrypt_and_hash n0 payload >>= fun (n1, msg1) ->
+  let n2 = setup_transport_one_way n1 in
+  Ok (n2, msg1)
+
 let init_handle_e_es n0 payload epub epriv =
-  assert (Noise.Dh_25519.corresponds ~pub:epub ~priv:epriv);
   let (n1, msg0) = init_handle_e n0 epub epriv in
   let n2 = init_handle_es n1 in
-  encrypt_and_hash n2 payload >>= fun (n3, msg1) ->
-  let result = Cstruct.concat [msg0; msg1] in
-  let n4 = setup_transport_one_way n3 in
-  Ok (n4, result)
+  init_finish_one_way n2 payload >>= fun (n3, msg1) ->
+  Ok (n3, Cstruct.concat [msg0; msg1])
+
+let init_handle_e_es_ss n0 payload epub epriv =
+  let (n1, msg0) = init_handle_e n0 epub epriv in
+  let n2 = init_handle_es n1 in
+  let n3 = handle_ss n2 in
+  init_finish_one_way n3 payload >>= fun (n4, msg1) ->
+  Ok (n4, Cstruct.concat [msg0; msg1])
 
 let with_transport_one_way n0 k =
   match n0.transport with
@@ -425,37 +440,67 @@ let check_one_way_transport_message ~ctxt initiator responder message n =
 
 let initiator_handshake = function
   | Noise.Pattern.N -> init_handle_e_es
+  | Noise.Pattern.K -> init_handle_e_es_ss
 
 let responder_handshake = function
   | Noise.Pattern.N -> responder_handle_e_es
+  | Noise.Pattern.K -> responder_handle_e_es_ss
 
 let make_responder_from_vector params vector =
+  let h = prep_h vector.name params.hash in
   match params.pattern with
   | Noise.Pattern.N ->
-    let h = prep_h vector.name params.hash in
     let resp_static = get_exn "resp_static" vector.resp_static in
     let static_pub = get_exn "init_remote_static" vector.init_remote_static in
     assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
-    make_responder
-      ~s:resp_static
+    make_state
+      ~s:(Some resp_static)
+      ~rs:None
       ~params
       ~h
     |> init_public_data
       ~prologue:vector.resp_prologue
-      ~s_pub:static_pub
+      ~pre_public_keys:[static_pub]
+  | Noise.Pattern.K ->
+    let resp_static = get_exn "resp_static" vector.resp_static in
+    let static_pub = get_exn "init_remote_static" vector.init_remote_static in
+    let init_pub = get_exn "init_pub" vector.resp_remote_static in
+    assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
+    make_state
+      ~s:(Some resp_static)
+      ~rs:(Some init_pub)
+      ~params
+      ~h
+    |> init_public_data
+      ~prologue:vector.resp_prologue
+      ~pre_public_keys:[init_pub; static_pub]
 
 let make_initiator_from_vector params vector =
+  let h = prep_h vector.name params.hash in
   match params.pattern with
   | Noise.Pattern.N ->
     let rs = get_exn "rs" vector.init_remote_static in
-    let h = prep_h vector.name params.hash in
-    make_init
+    make_state
       ~h
-      ~rs
+      ~s:None
+      ~rs:(Some rs)
       ~params
     |> init_public_data
       ~prologue:vector.resp_prologue
-      ~s_pub:rs
+      ~pre_public_keys:[rs]
+  | Noise.Pattern.K ->
+    let s = get_exn "s" vector.init_static in
+    let s_pub = get_exn "s" vector.resp_remote_static in
+    let rs = get_exn "rs" vector.init_remote_static in
+    assert (Noise.Dh_25519.corresponds ~priv:s ~pub:s_pub);
+    make_state
+      ~h
+      ~s:(Some s)
+      ~rs:(Some rs)
+      ~params
+    |> init_public_data
+      ~prologue:vector.resp_prologue
+      ~pre_public_keys:[s_pub; rs]
 
 let hd_tl_exn = function
   | hd::tl -> (hd, tl)
