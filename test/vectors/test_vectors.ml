@@ -157,18 +157,19 @@ type state =
   ; e : Private_key.t option
   ; rs : Public_key.t option
   ; s : Private_key.t option
-  ; ck : Cstruct.t
-  ; h : Cstruct.t
+  ; symmetric_state : Noise.Symmetric_state.t
   ; params : params
   ; cipher_state : Noise.Cipher_state.t
   ; transport : Noise.Cipher_state.t option
   }
 
 let mix_hash n data =
-  let new_h =
-    Noise.Hash.hash n.params.hash (Cstruct.concat [n.h; data])
-  in
-  { n with h = new_h }
+  { n with
+    symmetric_state =
+      Noise.Symmetric_state.mix_hash
+        n.symmetric_state
+        data
+  }
 
 let init_public_data n0 ~prologue ~pre_public_keys =
   List.fold_left
@@ -202,40 +203,16 @@ let initial_set_e n k =
   | None -> { n with e = Some k }
   | Some _ -> failwith "initial_set_e"
 
-let hkdf2 params ck input =
-  let hash = params.hash in
-  let hashlen = Noise.Hash.len hash in
-  assert (Cstruct.len ck = hashlen);
-  let ikm_length = Cstruct.len input in
-  let dh_len = Noise.Dh.len params.dh in
-  assert (
-    List.mem ikm_length [0; 32; dh_len]
-  );
-  Noise.Hkdf.hkdf2
-    ~hmac:(Noise.Hash.hmac hash)
-    ~salt:ck
-    ~ikm:input
-
-let initialize_key n key =
-  { n with
-    cipher_state = Noise.Cipher_state.create key
-  }
-
-let set_ck n ck =
-  { n with ck }
-
-let truncate_if_hash_64 hash input =
-  if Noise.Hash.len hash = 64 then
-    Cstruct.sub input 0 32
-  else
-    input
-
 let mix_key n0 input =
-  let ck0 = n0.ck in
-  let (ck1, temp_k) = hkdf2 n0.params ck0 input in
-  let n1 = set_ck n0 ck1 in
-  let truncated_temp_k = truncate_if_hash_64 n1.params.hash temp_k in
-  initialize_key n1 (Noise.Private_key.of_bytes truncated_temp_k)
+  let (new_symmetric_state, new_key) =
+    Noise.Symmetric_state.mix_key
+      n0.symmetric_state
+      input
+  in
+  { n0 with
+      cipher_state = Noise.Cipher_state.create new_key
+    ; symmetric_state = new_symmetric_state
+  }
 
 let (>>=) x f =
   match x with
@@ -249,7 +226,7 @@ let decrypt_with_ad_cs cipher_state ~ad cipher =
 let decrypt_with_ad n0 ciphertext_and_tag =
   decrypt_with_ad_cs
     n0.cipher_state
-    ~ad:n0.h
+    ~ad:(Noise.Symmetric_state.h n0.symmetric_state)
     n0.params.cipher
     ciphertext_and_tag
   >>= fun (new_cs, plaintext) ->
@@ -262,7 +239,7 @@ let is_some = function
 
 let get_handshake n =
   assert (is_some n.transport);
-  n.h
+  Noise.Symmetric_state.h n.symmetric_state
 
 let decrypt_and_hash n0 ciphertext =
   decrypt_with_ad n0 ciphertext >>= fun (n1, plaintext) ->
@@ -291,14 +268,12 @@ let handle_ss n =
   |>
   mix_key n
 
-let split_one_way n0 =
-  let (temp_k1, _) = hkdf2 n0.params n0.ck Cstruct.empty in
-  let temp_k1 = truncate_if_hash_64 n0.params.hash temp_k1 in
-  let transport_key1 = Noise.Private_key.of_bytes temp_k1 in
-  Noise.Cipher_state.create transport_key1
-
-let setup_transport_one_way n0 =
-  { n0 with transport = Some (split_one_way n0) }
+let setup_transport_one_way s =
+  { s with
+    transport =
+      Some
+        (Noise.Symmetric_state.split_one_way s.symmetric_state)
+  }
 
 let responder_handle_e_es n0 msg0 =
   let (n1, msg1) = responder_handle_e n0 msg0 in
@@ -316,13 +291,18 @@ let responder_handle_e_es_ss n0 msg0 =
   Ok (n5, payload)
 
 let make_state ~h ~params ~s ~rs =
+  let symmetric_state =
+    Noise.Symmetric_state.create
+      params.hash
+      params.dh
+      h
+  in
   { re = None
   ; e = None
   ; s
   ; rs
-  ; ck = h
-  ; h
   ; params
+  ; symmetric_state
   ; cipher_state = Noise.Cipher_state.empty
   ; transport = None
   }
@@ -347,7 +327,7 @@ let encrypt_with_ad_cs cipher_state ~ad cipher =
 let encrypt_with_ad n0 plaintext =
   encrypt_with_ad_cs
     n0.cipher_state
-    ~ad:n0.h
+    ~ad:(Noise.Symmetric_state.h n0.symmetric_state)
     n0.params.cipher
     plaintext
   >>= fun (new_cs, ciphertext) ->
