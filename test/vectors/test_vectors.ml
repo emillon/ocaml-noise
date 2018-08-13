@@ -119,7 +119,7 @@ type test_vector =
   ; handshake_hash : Test_helpers.Hex_string.t
   ; init_psk : string option [@default None]
   ; init_static : Private_key.t option [@default None]
-  ; resp_ephemeral : string option [@default None]
+  ; resp_ephemeral : Private_key.t option [@default None]
   ; resp_psk : string option [@default None]
   ; resp_remote_static : Public_key.t option [@default None]
   }
@@ -155,6 +155,7 @@ let get_result_exn msg = function
 type state =
   { re : Public_key.t option
   ; e : Private_key.t option
+  ; e_pub : Public_key.t option
   ; rs : Public_key.t option
   ; s : Private_key.t option
   ; symmetric_state : Noise.Symmetric_state.t
@@ -197,11 +198,6 @@ let initial_set_re n k =
   match n.re with
   | None -> { n with re = Some k }
   | Some _ -> failwith "initial_set_re"
-
-let initial_set_e n k =
-  match n.e with
-  | None -> { n with e = Some k }
-  | Some _ -> failwith "initial_set_e"
 
 let mix_key n0 input =
   let (new_symmetric_state, new_key) =
@@ -275,30 +271,54 @@ let setup_transport_one_way s =
         (Noise.Symmetric_state.split_one_way s.symmetric_state)
   }
 
-let responder_handle_e_es n0 msg0 =
-  let (n1, msg1) = responder_handle_e n0 msg0 in
-  let n2 = responder_handle_es n1 in
-  decrypt_and_hash n2 msg1 >>= fun (n3, payload) ->
-  let n4 = setup_transport_one_way n3 in
-  Ok (n4, payload)
+type resp_handler =
+  state -> Cstruct.t -> (state * Cstruct.t, string) result
 
-let responder_handle_e_es_ss n0 msg0 =
-  let (n1, msg1) = responder_handle_e n0 msg0 in
-  let n2 = responder_handle_es n1 in
-  let n3 = handle_ss n2 in
-  decrypt_and_hash n3 msg1 >>= fun (n4, payload) ->
-  let n5 = setup_transport_one_way n4 in
-  Ok (n5, payload)
+let resp_handler_e : resp_handler =
+  fun s msg ->
+    Ok (responder_handle_e s msg)
 
-let make_state ~h ~params ~s ~rs =
+let resp_handler_es : resp_handler =
+  fun s msg ->
+    let new_s = responder_handle_es s in
+    Ok (new_s, msg)
+
+let resp_handler_ss : resp_handler =
+  fun s msg ->
+    let new_s = handle_ss s in
+    Ok (new_s, msg)
+
+let resp_handler_payload : resp_handler =
+  fun s msg ->
+    decrypt_and_hash s msg >>= fun (new_s, new_msg) ->
+    Ok
+      ( setup_transport_one_way new_s
+      , new_msg
+      )
+
+let rec compose_resp_handlers : resp_handler list -> resp_handler =
+  fun handlers s msg ->
+    match handlers with
+    | hdl::hdls ->
+      hdl s msg >>= fun (next_s, next_msg) ->
+      compose_resp_handlers hdls next_s next_msg
+    | [] -> Ok (s, msg)
+
+let opt_map f = function
+  | None -> None
+  | Some x -> Some (f x)
+
+let make_state ~h ~params ~s ~rs ~e =
   let symmetric_state =
     Noise.Symmetric_state.create
       params.hash
       params.dh
       h
   in
+  let e_pub = opt_map Noise.Dh_25519.public_key e in
   { re = None
-  ; e = None
+  ; e
+  ; e_pub
   ; s
   ; rs
   ; params
@@ -307,18 +327,20 @@ let make_state ~h ~params ~s ~rs =
   ; transport = None
   }
 
-let init_handle_e n0 epub epriv =
-  assert (Noise.Dh_25519.corresponds ~pub:epub ~priv:epriv);
-  let n1 = initial_set_e n0 epriv in
-  let n2 = mix_hash n1 (Noise.Public_key.bytes epub) in
-  (n2, Noise.Public_key.bytes epub)
+let init_handler_e n0 =
+  let epub = get_exn "e_pub" n0.e_pub in
+  let n1 = mix_hash n0 (Noise.Public_key.bytes epub) in
+  Ok (n1, Noise.Public_key.bytes epub)
 
-let init_handle_es n =
+let init_return x = Ok (x, Cstruct.empty)
+
+let init_handler_es n =
   Noise.Dh.key_exchange
     n.params.dh
     ~priv:(get_exn "e" n.e)
     ~pub:(get_exn "rs" n.rs)
   |> mix_key n
+  |> init_return
 
 let encrypt_with_ad_cs cipher_state ~ad cipher =
   Noise.Cipher_state.with_ cipher_state
@@ -339,23 +361,27 @@ let encrypt_and_hash n0 payload =
   let n2 = mix_hash n1 ciphertext in
   Ok (n2, ciphertext)
 
-let init_finish_one_way n0 payload =
-  encrypt_and_hash n0 payload >>= fun (n1, msg1) ->
-  let n2 = setup_transport_one_way n1 in
-  Ok (n2, msg1)
+type init_handler = state -> (state * Cstruct.t, string) result
 
-let init_handle_e_es n0 payload epub epriv =
-  let (n1, msg0) = init_handle_e n0 epub epriv in
-  let n2 = init_handle_es n1 in
-  init_finish_one_way n2 payload >>= fun (n3, msg1) ->
-  Ok (n3, Cstruct.concat [msg0; msg1])
+let init_handler_payload payload : init_handler =
+  fun n0 ->
+    encrypt_and_hash n0 payload >>= fun (n1, msg1) ->
+    let n2 = setup_transport_one_way n1 in
+    Ok (n2, msg1)
 
-let init_handle_e_es_ss n0 payload epub epriv =
-  let (n1, msg0) = init_handle_e n0 epub epriv in
-  let n2 = init_handle_es n1 in
-  let n3 = handle_ss n2 in
-  init_finish_one_way n3 payload >>= fun (n4, msg1) ->
-  Ok (n4, Cstruct.concat [msg0; msg1])
+let init_handler_ss : init_handler =
+  fun n ->
+    init_return @@ handle_ss n
+
+let compose_init_handlers : init_handler list -> init_handler =
+  let rec go msgs s = function
+    | [] -> Ok (s, Cstruct.concat (List.rev msgs))
+    | hdl::hdls ->
+      hdl s >>= fun (new_s, new_msg) ->
+      go (new_msg::msgs) new_s hdls
+  in
+  fun handlers state ->
+    go [] state handlers
 
 let with_transport_one_way n0 k =
   match n0.transport with
@@ -418,13 +444,38 @@ let check_one_way_transport_message ~ctxt initiator responder message n =
     generated_ciphertext;
   (new_init, new_resp)
 
-let initiator_handshake = function
-  | Noise.Pattern.N -> init_handle_e_es
-  | Noise.Pattern.K -> init_handle_e_es_ss
+let init_handlers pattern payload =
+  match pattern with
+  | Noise.Pattern.N ->
+    [ init_handler_e
+    ; init_handler_es
+    ; init_handler_payload payload
+    ]
+  | Noise.Pattern.K ->
+    [ init_handler_e
+    ; init_handler_es
+    ; init_handler_ss
+    ; init_handler_payload payload
+    ]
 
-let responder_handshake = function
-  | Noise.Pattern.N -> responder_handle_e_es
-  | Noise.Pattern.K -> responder_handle_e_es_ss
+let initiator_handshake pattern state payload =
+  compose_init_handlers (init_handlers pattern payload) state
+
+let responder_handlers = function
+  | Noise.Pattern.N ->
+    [ resp_handler_e
+    ; resp_handler_es
+    ; resp_handler_payload
+    ]
+  | Noise.Pattern.K ->
+    [ resp_handler_e
+    ; resp_handler_es
+    ; resp_handler_ss
+    ; resp_handler_payload
+    ]
+
+let responder_handshake pattern =
+  compose_resp_handlers (responder_handlers pattern)
 
 let make_responder_from_vector params vector =
   let h = prep_h vector.name params.hash in
@@ -433,9 +484,11 @@ let make_responder_from_vector params vector =
     let resp_static = get_exn "resp_static" vector.resp_static in
     let static_pub = get_exn "init_remote_static" vector.init_remote_static in
     assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
+    let e = vector.resp_ephemeral in
     make_state
       ~s:(Some resp_static)
       ~rs:None
+      ~e
       ~params
       ~h
     |> init_public_data
@@ -446,9 +499,11 @@ let make_responder_from_vector params vector =
     let static_pub = get_exn "init_remote_static" vector.init_remote_static in
     let init_pub = get_exn "init_pub" vector.resp_remote_static in
     assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
+    let e = vector.resp_ephemeral in
     make_state
       ~s:(Some resp_static)
       ~rs:(Some init_pub)
+      ~e
       ~params
       ~h
     |> init_public_data
@@ -464,6 +519,7 @@ let make_initiator_from_vector params vector =
       ~h
       ~s:None
       ~rs:(Some rs)
+      ~e:(Some vector.init_ephemeral)
       ~params
     |> init_public_data
       ~prologue:vector.resp_prologue
@@ -473,10 +529,12 @@ let make_initiator_from_vector params vector =
     let s_pub = get_exn "s" vector.resp_remote_static in
     let rs = get_exn "rs" vector.init_remote_static in
     assert (Noise.Dh_25519.corresponds ~priv:s ~pub:s_pub);
+    let e = vector.init_ephemeral in
     make_state
       ~h
       ~s:(Some s)
       ~rs:(Some rs)
+      ~e:(Some e)
       ~params
     |> init_public_data
       ~prologue:vector.resp_prologue
@@ -498,15 +556,12 @@ let build_test_case vector =
       let responder = make_responder_from_vector params vector in
       let first_msg, transport_messages = hd_tl_exn vector.messages in
       let initiator = make_initiator_from_vector params vector in
-      let (epub, _) = split_dh initiator.params first_msg.ciphertext in
 
       let initiator_post_handshake =
         initiator_handshake
           params.pattern
           initiator
           first_msg.payload
-          epub
-          vector.init_ephemeral
         >>= fun (n1, _) ->
         Ok n1
       in
