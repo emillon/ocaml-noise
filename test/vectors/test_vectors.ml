@@ -158,6 +158,7 @@ type state =
   ; e_pub : Public_key.t option
   ; rs : Public_key.t option
   ; s : Private_key.t option
+  ; s_pub : Public_key.t option
   ; symmetric_state : Noise.Symmetric_state.t
   ; params : params
   ; cipher_state : Noise.Cipher_state.t
@@ -189,15 +190,26 @@ let prep_h name hash =
   else
     Noise.Hash.hash hash buf_name
 
-let split_dh params msg =
+let split_dh ~extra16 params msg =
   let dh_len = Noise.Dh.len params.dh in
-  let (a, b) = Cstruct.split msg dh_len in
+  let len =
+    if extra16 then
+      dh_len + 16
+    else
+      dh_len
+  in
+  let (a, b) = Cstruct.split msg len in
   (Noise.Public_key.of_bytes a, b)
 
 let initial_set_re n k =
   match n.re with
   | None -> { n with re = Some k }
   | Some _ -> failwith "initial_set_re"
+
+let initial_set_rs n k =
+  match n.rs with
+  | None -> { n with rs = Some k }
+  | Some _ -> failwith "initial_set_rs"
 
 let mix_key n0 input =
   let (new_symmetric_state, new_key) =
@@ -243,7 +255,7 @@ let decrypt_and_hash n0 ciphertext =
   Ok (n2, plaintext)
 
 let responder_handle_e n0 msg0 =
-  let (re, msg1) = split_dh n0.params msg0 in
+  let (re, msg1) = split_dh ~extra16:false n0.params msg0 in
   let n1 = initial_set_re n0 re in
   let n2 = mix_hash n1 (Noise.Public_key.bytes re) in
   (n2, msg1)
@@ -296,6 +308,16 @@ let resp_handler_payload : resp_handler =
       , new_msg
       )
 
+let resp_handler_s : resp_handler =
+  fun s0 msg ->
+    let (temp, new_msg) =
+      split_dh
+        ~extra16:(Noise.Cipher_state.has_key s0.cipher_state)
+        s0.params msg
+    in
+    decrypt_and_hash s0 (Noise.Public_key.bytes temp) >>= fun (s1, plaintext) ->
+    Ok (initial_set_rs s1 (Noise.Public_key.of_bytes plaintext), new_msg)
+
 let rec compose_resp_handlers : resp_handler list -> resp_handler =
   fun handlers s msg ->
     match handlers with
@@ -316,10 +338,12 @@ let make_state ~h ~params ~s ~rs ~e =
       h
   in
   let e_pub = opt_map Noise.Dh_25519.public_key e in
+  let s_pub = opt_map Noise.Dh_25519.public_key s in
   { re = None
   ; e
   ; e_pub
   ; s
+  ; s_pub
   ; rs
   ; params
   ; symmetric_state
@@ -372,6 +396,12 @@ let init_handler_payload payload : init_handler =
 let init_handler_ss : init_handler =
   fun n ->
     init_return @@ handle_ss n
+
+let init_handler_s : init_handler =
+  fun s ->
+    let s_pub = get_exn "s_pub" s.s_pub in
+    let plaintext = Noise.Public_key.bytes s_pub in
+    encrypt_and_hash s plaintext
 
 let compose_init_handlers : init_handler list -> init_handler =
   let rec go msgs s = function
@@ -457,6 +487,13 @@ let init_handlers pattern payload =
     ; init_handler_ss
     ; init_handler_payload payload
     ]
+  | Noise.Pattern.X ->
+    [ init_handler_e
+    ; init_handler_es
+    ; init_handler_s
+    ; init_handler_ss
+    ; init_handler_payload payload
+    ]
 
 let initiator_handshake pattern state payload =
   compose_init_handlers (init_handlers pattern payload) state
@@ -470,6 +507,13 @@ let responder_handlers = function
   | Noise.Pattern.K ->
     [ resp_handler_e
     ; resp_handler_es
+    ; resp_handler_ss
+    ; resp_handler_payload
+    ]
+  | Noise.Pattern.X ->
+    [ resp_handler_e
+    ; resp_handler_es
+    ; resp_handler_s
     ; resp_handler_ss
     ; resp_handler_payload
     ]

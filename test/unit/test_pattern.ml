@@ -14,6 +14,7 @@ let test_of_string =
   "of_string" >:::
   [ "N" >:= should_be (Ok N)
   ; "K" >:= should_be (Ok K)
+  ; "X" >:= should_be (Ok X)
   ]
 
 let suite =

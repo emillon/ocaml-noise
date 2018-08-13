@@ -19,3 +19,5 @@ val with_ :
   ) ->
   'a ->
   (t * 'a, string) result
+
+val has_key : t -> bool

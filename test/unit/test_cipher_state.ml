@@ -67,7 +67,24 @@ let test_with_ =
     ]
   ]
 
+let test_has_key =
+  let test cipher_state expected ctxt =
+    let got = Noise.Cipher_state.has_key cipher_state in
+    assert_equal
+      ~ctxt
+      ~cmp:[%eq: bool]
+      ~printer:[%show: bool]
+      expected
+      got
+  in
+  "has_key" >:::
+  [ "Empty" >:: test Noise.Cipher_state.empty false
+  ; "Ready" >:: test (Data.make 0L) true
+  ; "Depleted" >:: test Noise.Cipher_state.depleted false
+  ]
+
 let suite =
   "Cipher_state" >:::
   [ test_with_
+  ; test_has_key
   ]

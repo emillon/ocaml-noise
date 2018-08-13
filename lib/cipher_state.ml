@@ -36,3 +36,8 @@ let with_ t f x =
     in
     (new_cs, r)
   | Depleted -> Error "Nonce depleted"
+
+let has_key = function
+  | Empty -> false
+  | Ready _ -> true
+  | Depleted -> false
