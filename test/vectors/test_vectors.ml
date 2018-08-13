@@ -477,68 +477,44 @@ let responder_handlers = function
 let responder_handshake pattern =
   compose_resp_handlers (responder_handlers pattern)
 
+let concat_some a b =
+  match a, b with
+  | None, None -> []
+  | Some sa, None -> [sa]
+  | None, Some sb -> [sb]
+  | Some sa, Some sb -> [sa; sb]
+
 let make_responder_from_vector params vector =
   let h = prep_h vector.name params.hash in
-  match params.pattern with
-  | Noise.Pattern.N ->
-    let resp_static = get_exn "resp_static" vector.resp_static in
-    let static_pub = get_exn "init_remote_static" vector.init_remote_static in
-    assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
-    let e = vector.resp_ephemeral in
-    make_state
-      ~s:(Some resp_static)
-      ~rs:None
-      ~e
-      ~params
-      ~h
-    |> init_public_data
-      ~prologue:vector.resp_prologue
-      ~pre_public_keys:[static_pub]
-  | Noise.Pattern.K ->
-    let resp_static = get_exn "resp_static" vector.resp_static in
-    let static_pub = get_exn "init_remote_static" vector.init_remote_static in
-    let init_pub = get_exn "init_pub" vector.resp_remote_static in
-    assert (Noise.Dh_25519.corresponds ~priv:resp_static ~pub:static_pub);
-    let e = vector.resp_ephemeral in
-    make_state
-      ~s:(Some resp_static)
-      ~rs:(Some init_pub)
-      ~e
-      ~params
-      ~h
-    |> init_public_data
-      ~prologue:vector.resp_prologue
-      ~pre_public_keys:[init_pub; static_pub]
+  let e = vector.resp_ephemeral in
+  let s = vector.resp_static in
+  let static_pub = vector.init_remote_static in
+  let rs = vector.resp_remote_static in
+  make_state
+    ~s
+    ~rs
+    ~e
+    ~params
+    ~h
+  |> init_public_data
+    ~prologue:vector.resp_prologue
+    ~pre_public_keys:(concat_some rs static_pub)
 
 let make_initiator_from_vector params vector =
   let h = prep_h vector.name params.hash in
-  match params.pattern with
-  | Noise.Pattern.N ->
-    let rs = get_exn "rs" vector.init_remote_static in
-    make_state
-      ~h
-      ~s:None
-      ~rs:(Some rs)
-      ~e:(Some vector.init_ephemeral)
-      ~params
-    |> init_public_data
-      ~prologue:vector.resp_prologue
-      ~pre_public_keys:[rs]
-  | Noise.Pattern.K ->
-    let s = get_exn "s" vector.init_static in
-    let s_pub = get_exn "s" vector.resp_remote_static in
-    let rs = get_exn "rs" vector.init_remote_static in
-    assert (Noise.Dh_25519.corresponds ~priv:s ~pub:s_pub);
-    let e = vector.init_ephemeral in
-    make_state
-      ~h
-      ~s:(Some s)
-      ~rs:(Some rs)
-      ~e:(Some e)
-      ~params
-    |> init_public_data
-      ~prologue:vector.resp_prologue
-      ~pre_public_keys:[s_pub; rs]
+  let rs = vector.init_remote_static in
+  let e = vector.init_ephemeral in
+  let s = vector.init_static in
+  let s_pub = vector.resp_remote_static in
+  make_state
+    ~h
+    ~s
+    ~rs
+    ~e:(Some e)
+    ~params
+  |> init_public_data
+    ~prologue:vector.resp_prologue
+    ~pre_public_keys:(concat_some s_pub rs)
 
 let hd_tl_exn = function
   | hd::tl -> (hd, tl)
