@@ -155,15 +155,19 @@ let get_result_exn msg = function
 type state =
   { re : Public_key.t option
   ; e : Private_key.t option
-  ; e_pub : Public_key.t option
   ; rs : Public_key.t option
   ; s : Private_key.t option
-  ; s_pub : Public_key.t option
   ; symmetric_state : Noise.Symmetric_state.t
   ; params : params
   ; cipher_state : Noise.Cipher_state.t
   ; transport : Noise.Cipher_state.t option
   }
+
+let e_pub state =
+  Noise.Dh_25519.public_key @@ get_exn "e_pub" state.e
+
+let s_pub state =
+  Noise.Dh_25519.public_key @@ get_exn "s_pub" state.s
 
 let mix_hash n data =
   { n with
@@ -326,10 +330,6 @@ let rec compose_resp_handlers : resp_handler list -> resp_handler =
       compose_resp_handlers hdls next_s next_msg
     | [] -> Ok (s, msg)
 
-let opt_map f = function
-  | None -> None
-  | Some x -> Some (f x)
-
 let make_state ~h ~params ~s ~rs ~e =
   let symmetric_state =
     Noise.Symmetric_state.create
@@ -337,13 +337,9 @@ let make_state ~h ~params ~s ~rs ~e =
       params.dh
       h
   in
-  let e_pub = opt_map Noise.Dh_25519.public_key e in
-  let s_pub = opt_map Noise.Dh_25519.public_key s in
   { re = None
   ; e
-  ; e_pub
   ; s
-  ; s_pub
   ; rs
   ; params
   ; symmetric_state
@@ -352,7 +348,7 @@ let make_state ~h ~params ~s ~rs ~e =
   }
 
 let init_handler_e n0 =
-  let epub = get_exn "e_pub" n0.e_pub in
+  let epub = e_pub n0 in
   let n1 = mix_hash n0 (Noise.Public_key.bytes epub) in
   Ok (n1, Noise.Public_key.bytes epub)
 
@@ -399,7 +395,7 @@ let init_handler_ss : init_handler =
 
 let init_handler_s : init_handler =
   fun s ->
-    let s_pub = get_exn "s_pub" s.s_pub in
+    let s_pub = s_pub s in
     let plaintext = Noise.Public_key.bytes s_pub in
     encrypt_and_hash s plaintext
 
