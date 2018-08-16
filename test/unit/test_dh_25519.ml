@@ -60,9 +60,25 @@ let test_corresponds =
   ; "Priv B, Pub B" >:: test bobsk bobpk true
   ]
 
+let test_public_key =
+  let test priv expected ctxt =
+    let got = Noise.Dh_25519.public_key priv in
+    assert_equal
+      ~ctxt
+      ~cmp:[%eq: Noise.Public_key.t]
+      ~printer:[%show: Noise.Public_key.t]
+      expected
+      got
+  in
+  let open Data in
+  "public_key" >:::
+  [ "Alice" >:: test alicesk alicepk
+  ; "Bob" >:: test bobsk bobpk
+  ]
 
 let suite =
   "Dh_25519" >:::
   [ test_key_exchange
   ; test_corresponds
+  ; test_public_key
   ]

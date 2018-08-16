@@ -9,7 +9,6 @@ let public_key_cs priv =
   let pub_base = Public_key.of_bytes base in
   key_exchange ~priv ~pub:pub_base
 
-(* XXX unit *)
 let public_key priv =
   Public_key.of_bytes (public_key_cs priv)
 
