@@ -1,3 +1,5 @@
+open Util
+
 type t =
   | Empty
   | Ready of
@@ -16,11 +18,6 @@ let create ?unsafe_nonce:(nonce=0L) key =
     }
 
 let depleted = Depleted
-
-let (>>|) x f =
-  match x with
-  | Ok x -> Ok (f x)
-  | Error _ as e -> e
 
 let with_ t f x =
   match t with
