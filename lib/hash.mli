@@ -1,6 +1,8 @@
 type t =
   | SHA256
   | SHA512
+  | BLAKE2s
+  | BLAKE2b
 [@@deriving eq,show]
 
 val of_string : string -> (t, string) result

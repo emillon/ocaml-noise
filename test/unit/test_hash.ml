@@ -14,6 +14,8 @@ let test_of_string =
   "of_string" >:::
   [ "SHA256" >:= should_be (Ok SHA256)
   ; "SHA512" >:= should_be (Ok SHA512)
+  ; "BLAKE2s" >:= should_be (Ok BLAKE2s)
+  ; "BLAKE2b" >:= should_be (Ok BLAKE2b)
   ]
 
 let test_len =
@@ -29,6 +31,8 @@ let test_len =
   "len" >:::
   [ "SHA256" >:: test SHA256 32
   ; "SHA512" >:: test SHA512 64
+  ; "BLAKE2s" >:: test BLAKE2s 32
+  ; "BLAKE2b" >:: test BLAKE2b 64
   ]
 
 let suite =
