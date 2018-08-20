@@ -1,4 +1,5 @@
 open OUnit2
+open Noise.Util
 
 module KU = struct
   type 'k t =
@@ -106,11 +107,6 @@ let init_public_data n0 ~prologue ~pre_public_keys =
     n0
     (prologue::List.map Noise.Public_key.bytes pre_public_keys)
 
-let (>>=) x f =
-  match x with
-  | Ok x -> f x
-  | Error _ as e -> e
-
 let is_some = function
   | Some _ -> true
   | None -> false
@@ -124,14 +120,14 @@ let resp_handler_e n0 msg0 =
 let responder_handle_es s =
   Noise.State.mix_dh_key
     s
-    ~priv:(get_exn "s" @@ Noise.State.s s)
-    ~pub:(get_exn "re" @@ Noise.State.re s)
+    ~remote:Ephemeral
+    ~local:Static
 
 let handle_ss s =
   Noise.State.mix_dh_key
     s
-    ~priv:(get_exn "s" @@ Noise.State.s s)
-    ~pub:(get_exn "rs" @@ Noise.State.rs s)
+    ~remote:Static
+    ~local:Static
 
 type resp_handler =
   Noise.State.t ->
@@ -140,12 +136,12 @@ type resp_handler =
 
 let resp_handler_es : resp_handler =
   fun s msg ->
-    let new_s = responder_handle_es s in
+    responder_handle_es s >>= fun new_s ->
     Ok (new_s, msg)
 
 let resp_handler_ss : resp_handler =
   fun s msg ->
-    let new_s = handle_ss s in
+    handle_ss s >>= fun new_s ->
     Ok (new_s, msg)
 
 let resp_handler_payload : resp_handler =
@@ -181,9 +177,9 @@ let init_return x = Ok (x, Cstruct.empty)
 let init_handler_es n =
   Noise.State.mix_dh_key
     n
-    ~priv:(get_exn "e" @@ Noise.State.e n)
-    ~pub:(get_exn "rs" @@ Noise.State.rs n)
-  |> init_return
+    ~local:Ephemeral
+    ~remote:Static
+  >>= init_return
 
 type init_handler =
   Noise.State.t ->
@@ -197,7 +193,7 @@ let init_handler_payload payload : init_handler =
 
 let init_handler_ss : init_handler =
   fun n ->
-    init_return @@ handle_ss n
+    handle_ss n >>= init_return
 
 let init_handler_s : init_handler =
   fun s ->

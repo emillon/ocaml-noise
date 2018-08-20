@@ -17,11 +17,6 @@ type t =
   ; transport : Cipher_state.t option
   }
 
-let e s = s.e
-let s s = s.s
-let re s = s.re
-let rs s = s.rs
-
 let prep_h name hash =
   let buf_name = Cstruct.of_string name in
   let hashlen = Hash.len hash in
@@ -97,12 +92,30 @@ let mix_key s input =
     ; symmetric_state = new_symmetric_state
   }
 
-let mix_dh_key s ~priv ~pub =
+type key_type = Static | Ephemeral
+
+let key_or_error key_opt name =
+  match key_opt with
+  | None -> Error (Printf.sprintf "%s is not set" name)
+  | Some k -> Ok k
+
+let local_key s = function
+  | Static -> key_or_error s.s "s"
+  | Ephemeral -> key_or_error s.e "e"
+
+let remote_key s = function
+  | Static -> key_or_error s.rs "rs"
+  | Ephemeral -> key_or_error s.re "re"
+
+let mix_dh_key s ~local ~remote =
+  local_key s local >>= fun priv ->
+  remote_key s remote >>= fun pub ->
   Dh.key_exchange
     s.params.dh
     ~priv
     ~pub
   |> mix_key s
+  |> fun x -> Ok x
 
 let set_re s k =
   match s.re with

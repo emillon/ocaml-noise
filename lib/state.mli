@@ -10,22 +10,20 @@ val make :
   e:Private_key.t option ->
   t
 
-val e : t -> Private_key.t option
 val e_pub : t -> Public_key.t option
-val re : t -> Public_key.t option
 val set_re : t -> Public_key.t -> (t, string) result
-val s : t -> Private_key.t option
 val s_pub : t -> Public_key.t option
-val rs : t -> Public_key.t option
 val set_rs : t -> Public_key.t -> (t, string) result
+
+type key_type = Static | Ephemeral
 
 val mix_hash : t -> Cstruct.t -> t
 
 val mix_dh_key :
   t ->
-  priv:Private_key.t ->
-  pub:Public_key.t ->
-  t
+  local:key_type ->
+  remote:key_type ->
+  (t, string) result
 
 val decrypt_and_hash :
   t ->
