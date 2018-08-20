@@ -43,8 +43,12 @@ let mix_key s input =
   let truncated_temp_k = truncate_if_hash_64 new_s temp_k in
   (new_s, Private_key.of_bytes truncated_temp_k)
 
-let split_one_way s =
-  let (temp_k1, _) = hkdf2 s Cstruct.empty in
-  let temp_k1 = truncate_if_hash_64 s temp_k1 in
-  let transport_key1 = Private_key.of_bytes temp_k1 in
-  Cipher_state.create transport_key1
+let split s =
+  let make_cipher_state temp_k =
+    temp_k
+    |> truncate_if_hash_64 s
+    |> Private_key.of_bytes
+    |> Cipher_state.create
+  in
+  let (temp_k1, temp_k2) = hkdf2 s Cstruct.empty in
+  (make_cipher_state temp_k1, make_cipher_state temp_k2)

@@ -12,4 +12,4 @@ val mix_key : t -> Cstruct.t -> t * Private_key.t
 
 val h : t -> Cstruct.t
 
-val split_one_way : t -> Cipher_state.t
+val split : t -> Cipher_state.t * Cipher_state.t

@@ -14,7 +14,9 @@ type t =
   ; symmetric_state : Symmetric_state.t
   ; params : params
   ; cipher_state : Cipher_state.t
-  ; transport : Cipher_state.t option
+  ; transport_init_to_resp : Cipher_state.t option
+  ; is_initiator : bool
+  ; pattern : Pattern.t
   }
 
 let prep_h name hash =
@@ -28,7 +30,7 @@ let prep_h name hash =
   else
     Hash.hash hash buf_name
 
-let make ~name ~hash ~dh ~cipher ~s ~rs ~e =
+let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e =
   let h = prep_h name hash in
   let params =
     { hash
@@ -49,7 +51,9 @@ let make ~name ~hash ~dh ~cipher ~s ~rs ~e =
   ; params
   ; symmetric_state
   ; cipher_state = Cipher_state.empty
-  ; transport = None
+  ; transport_init_to_resp = None
+  ; is_initiator
+  ; pattern
   }
 
 let public_key_opt = function
@@ -61,6 +65,12 @@ let e_pub state =
 
 let s_pub state =
   public_key_opt state.s
+
+let is_initiator state =
+  state.is_initiator
+
+let pattern state =
+  state.pattern
 
 let split_dh s msg =
   let dh_len = Dh.len s.params.dh in
@@ -140,10 +150,19 @@ let decrypt_with_ad s ciphertext_and_tag =
   >>| fun (new_cs, plaintext) ->
   ({s with cipher_state = new_cs}, plaintext)
 
+type state =
+  | Handshake_not_done
+  | One_way_transport
+
+let state s =
+  match s.transport_init_to_resp with
+  | None -> Handshake_not_done
+  | Some _ -> One_way_transport
+
 let handshake_hash s =
-  match s.transport with
-  | Some _ -> Some (Symmetric_state.h s.symmetric_state)
-  | None -> None
+  match state s with
+  | Handshake_not_done -> None
+  | One_way_transport -> Some (Symmetric_state.h s.symmetric_state)
 
 let decrypt_and_hash s0 ciphertext =
   decrypt_with_ad s0 ciphertext >>| fun (s1, plaintext) ->
@@ -167,12 +186,12 @@ let encrypt_and_hash s payload =
   (mix_hash n1 ciphertext, ciphertext)
 
 module One_way_transport = struct
-  let with_ s k =
-    match s.transport with
+  let with_init_to_resp s k =
+    match s.transport_init_to_resp with
     | Some cipher_state ->
       k cipher_state >>| fun (new_cs, result) ->
       ( { s with
-          transport = Some new_cs
+          transport_init_to_resp = Some new_cs
         }
       , result
       )
@@ -180,25 +199,32 @@ module One_way_transport = struct
       Error "Handshake not finished"
 
   let setup s =
+    let (init_to_resp, _) =
+      Symmetric_state.split s.symmetric_state
+    in
     { s with
-      transport =
-        Some
-          (Symmetric_state.split_one_way s.symmetric_state)
+      transport_init_to_resp = Some init_to_resp
     }
 
   let send s plaintext =
-    with_ s @@ fun cipher_state ->
-    encrypt_with_ad_cs
-      cipher_state
-      ~ad:Cstruct.empty
-      s.params.cipher
-      plaintext
+    if s.is_initiator then
+      with_init_to_resp s @@ fun cipher_state ->
+      encrypt_with_ad_cs
+        cipher_state
+        ~ad:Cstruct.empty
+        s.params.cipher
+        plaintext
+    else
+      Error "one way transport: cannot send"
 
   let receive s ciphertext =
-    with_ s @@ fun cipher_state ->
-    decrypt_with_ad_cs
-      cipher_state
-      ~ad:Cstruct.empty
-      s.params.cipher
-      ciphertext
+    if s.is_initiator then
+      Error "one way transport: cannot receive"
+    else
+      with_init_to_resp s @@ fun cipher_state ->
+      decrypt_with_ad_cs
+        cipher_state
+        ~ad:Cstruct.empty
+        s.params.cipher
+        ciphertext
 end

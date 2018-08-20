@@ -2,6 +2,8 @@ type t
 
 val make :
   name:string ->
+  pattern:Pattern.t ->
+  is_initiator:bool ->
   hash:Hash.t ->
   dh:Dh.t ->
   cipher:Cipher.t ->
@@ -14,8 +16,12 @@ val e_pub : t -> Public_key.t option
 val set_re : t -> Public_key.t -> (t, string) result
 val s_pub : t -> Public_key.t option
 val set_rs : t -> Public_key.t -> (t, string) result
+val is_initiator : t -> bool
+val pattern : t -> Pattern.t
 
-type key_type = Static | Ephemeral
+type key_type =
+  | Static
+  | Ephemeral
 
 val mix_hash : t -> Cstruct.t -> t
 
@@ -55,3 +61,9 @@ module One_way_transport : sig
     Cstruct.t ->
     (t * Cstruct.t, string) result
 end
+
+type state =
+  | Handshake_not_done
+  | One_way_transport
+
+val state : t -> state

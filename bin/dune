@@ -1,0 +1,12 @@
+(executable
+ (name noise_demo_one_way)
+ (libraries
+  noise
+  lwt.unix
+ )
+ (preprocess
+  (pps
+   lwt_ppx
+  )
+ )
+)
