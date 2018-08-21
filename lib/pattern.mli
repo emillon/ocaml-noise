@@ -6,6 +6,7 @@ type t =
   | NX
   | IN
   | XN
+  | XX
 [@@deriving eq,show]
 
 val of_string : string -> (t, string) result

@@ -192,6 +192,7 @@ let handshake_len =
     ->
     2
   | XN
+  | XX
     ->
     3
 
