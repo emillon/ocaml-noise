@@ -4,6 +4,7 @@ type t =
   | X
   | NN
   | NX
+  | IN
 [@@deriving eq,show]
 
 val of_string : string -> (t, string) result
@@ -14,6 +15,7 @@ type step =
   | S
   | SS
   | EE
+  | SE
 
 val all_steps : t -> step list list
 

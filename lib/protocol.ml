@@ -39,6 +39,15 @@ let write_handler step s0 =
         (Static, Ephemeral)
     in
     return @@ State.mix_dh_key s0 ~local ~remote
+  | SE ->
+    let (local, remote) =
+      let open State in
+      if is_initiator s0 then
+        (Static, Ephemeral)
+      else
+        (Ephemeral, Static)
+    in
+    return @@ State.mix_dh_key s0 ~local ~remote
   | S ->
     begin
       match State.s_pub s0 with
@@ -101,6 +110,16 @@ let read_handler step s0 msg0 =
         (Ephemeral, Static)
       else
         (Static, Ephemeral)
+    in
+    State.mix_dh_key s0 ~remote ~local >>= fun s1 ->
+    Ok (s1, msg0)
+  | SE ->
+    let (local, remote) =
+      let open State in
+      if is_initiator s0 then
+        (Static, Ephemeral)
+      else
+        (Ephemeral, Static)
     in
     State.mix_dh_key s0 ~remote ~local >>= fun s1 ->
     Ok (s1, msg0)
