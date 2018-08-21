@@ -99,7 +99,7 @@ let read_handler step s0 msg0 =
   let open Pattern in
   match step with
   | E ->
-    let (re, msg1) = State.split_dh s0 msg0 in
+    let (re, msg1) = State.split_dh ~clear:true s0 msg0 in
     State.set_re s0 re >>= fun s1 ->
     let s2 = State.mix_hash s1 (Public_key.bytes re) in
     Ok (s2, msg1)

@@ -44,6 +44,7 @@ val encrypt_and_hash :
 val handshake_hash : t -> Cstruct.t option
 
 val split_dh :
+  ?clear:bool ->
   t ->
   Cstruct.t ->
   Public_key.t * Cstruct.t

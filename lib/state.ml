@@ -76,10 +76,14 @@ let is_initiator state =
 let pattern state =
   state.pattern
 
-let split_dh s msg =
+let split_dh ?(clear=false) s msg =
   let dh_len = Dh.len s.params.dh in
   let len =
-    if Cipher_state.has_key s.cipher_state then
+    if clear then
+      dh_len
+    else if
+      Cipher_state.has_key s.cipher_state
+    then
       dh_len + 16
     else
       dh_len
@@ -132,11 +136,13 @@ let mix_dh_key s ~local ~remote =
   |> fun x -> Ok x
 
 let set_re s k =
+  assert (Cstruct.len (Public_key.bytes k) = 32);
   match s.re with
   | None -> Ok { s with re = Some k }
   | Some _ -> Error "re is already set"
 
 let set_rs s k =
+  assert (Cstruct.len (Public_key.bytes k) = 32);
   match s.rs with
   | None -> Ok { s with rs = Some k }
   | Some _ -> Error "rs is already set"
