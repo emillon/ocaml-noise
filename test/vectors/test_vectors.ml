@@ -191,6 +191,9 @@ let handshake_len =
   | IN
     ->
     2
+  | XN
+    ->
+    3
 
 let post_handshake pattern init0 resp0 msgs =
   match handshake_len pattern, msgs with
@@ -204,6 +207,14 @@ let post_handshake pattern init0 resp0 msgs =
     Noise.Protocol.write_message resp1 msg2.payload >>= fun (resp2, _) ->
     Noise.Protocol.read_message init1 msg2.ciphertext >>= fun (init2, _) ->
     Ok (init2, resp2, msgs)
+  | 3, msg1::msg2::msg3::msgs ->
+    Noise.Protocol.write_message init0 msg1.payload >>= fun (init1, _) ->
+    Noise.Protocol.read_message resp0 msg1.ciphertext >>= fun (resp1, _) ->
+    Noise.Protocol.write_message resp1 msg2.payload >>= fun (resp2, _) ->
+    Noise.Protocol.read_message init1 msg2.ciphertext >>= fun (init2, _) ->
+    Noise.Protocol.write_message init2 msg3.payload >>= fun (init3, _) ->
+    Noise.Protocol.read_message resp2 msg3.ciphertext >>= fun (resp3, _) ->
+    Ok (resp3, init3, msgs)
   | _ ->
     Error "Wrong number of messages"
 

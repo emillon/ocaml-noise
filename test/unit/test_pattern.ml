@@ -18,6 +18,7 @@ let test_of_string =
   ; "NN" >:= should_be (Ok NN)
   ; "NX" >:= should_be (Ok NX)
   ; "IN" >:= should_be (Ok IN)
+  ; "XN" >:= should_be (Ok XN)
   ]
 
 let suite =
