@@ -178,14 +178,26 @@ let make_initiator_from_vector pattern dh cipher hash vector =
     ~prologue:vector.resp_prologue
     ~public_keys:(concat_some s_pub rs)
 
-let post_handshake pattern init0 resp0 msgs =
+let handshake_len =
   let open Noise.Pattern in
-  match pattern, msgs with
-  | (N | K | X), msg1::msgs ->
+  function
+  | N
+  | K
+  | X
+    ->
+    1
+  | NN
+  | NX
+    ->
+    2
+
+let post_handshake pattern init0 resp0 msgs =
+  match handshake_len pattern, msgs with
+  | 1, msg1::msgs ->
     Noise.Protocol.write_message init0 msg1.payload >>= fun (init1, _) ->
     Noise.Protocol.read_message resp0 msg1.ciphertext >>= fun (resp1, _) ->
     Ok (init1, resp1, msgs)
-  | NN, msg1::msg2::msgs ->
+  | 2, msg1::msg2::msgs ->
     Noise.Protocol.write_message init0 msg1.payload >>= fun (init1, _) ->
     Noise.Protocol.read_message resp0 msg1.ciphertext >>= fun (resp1, _) ->
     Noise.Protocol.write_message resp1 msg2.payload >>= fun (resp2, _) ->

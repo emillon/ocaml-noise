@@ -31,12 +31,14 @@ let write_handler step s0 =
         Ok (s1, Public_key.bytes epub)
     end
   | ES ->
-    assert (State.is_initiator s0);
-    return @@
-    State.mix_dh_key
-      s0
-      ~local:Ephemeral
-      ~remote:Static
+    let (local, remote) =
+      let open State in
+      if is_initiator s0 then
+        (Ephemeral, Static)
+      else
+        (Static, Ephemeral)
+    in
+    return @@ State.mix_dh_key s0 ~local ~remote
   | S ->
     begin
       match State.s_pub s0 with
@@ -93,15 +95,16 @@ let read_handler step s0 msg0 =
     let s2 = State.mix_hash s1 (Public_key.bytes re) in
     Ok (s2, msg1)
   | ES ->
-    assert (not (State.is_initiator s0));
-    State.mix_dh_key
-      s0
-      ~remote:Ephemeral
-      ~local:Static
-    >>= fun s1 ->
+    let (local, remote) =
+      let open State in
+      if is_initiator s0 then
+        (Ephemeral, Static)
+      else
+        (Static, Ephemeral)
+    in
+    State.mix_dh_key s0 ~remote ~local >>= fun s1 ->
     Ok (s1, msg0)
   | S ->
-    assert (not (State.is_initiator s0));
     let (temp, msg1) = State.split_dh s0 msg0 in
     State.decrypt_and_hash s0 (Public_key.bytes temp) >>= fun (s1, plaintext) ->
     State.set_rs s1 (Public_key.of_bytes plaintext) >>= fun s2 ->
