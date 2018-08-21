@@ -6,23 +6,13 @@ let handle_ss s =
     ~remote:Static
     ~local:Static
 
-type action =
-  | E
-  | ES
-  | S
-  | SS
-
-let steps = function
-  | Pattern.N -> [E; ES]
-  | Pattern.K -> [E; ES; SS]
-  | Pattern.X -> [E; ES; S; SS]
-
 let write_handler_payload payload s0 =
   State.encrypt_and_hash s0 payload >>= fun (s1, msg1) ->
   let s2 = State.One_way_transport.setup s1 in
   Ok (s2, msg1)
 
 let write_handler step s0 =
+  let open Pattern in
   let return r =
     r >>| (fun x -> (x, Cstruct.empty))
   in
@@ -54,7 +44,7 @@ let write_handler step s0 =
   | SS ->
     return @@ handle_ss s0
 
-let compose_write_handlers payload state =
+let compose_write_handlers payload state steps =
   let rec go msgs s = function
     | [] -> Ok (s, Cstruct.concat (List.rev msgs))
     | hdl::hdls ->
@@ -62,20 +52,19 @@ let compose_write_handlers payload state =
       go (new_msg::msgs) new_s hdls
   in
   let handlers =
-    State.pattern state
-    |> steps
-    |> List.map write_handler
+    List.map write_handler steps
   in
   let handlers = handlers @ [write_handler_payload payload] in
   go [] state handlers
 
-let write_message s payload =
-  match State.state s with
+let write_message s0 payload =
+  match State.state s0 with
   | Handshake_not_done ->
-    assert (State.is_initiator s);
-    compose_write_handlers payload s
+    assert (State.is_initiator s0);
+    State.pop_handshake_step s0 >>= fun (s1, steps) ->
+    compose_write_handlers payload s1 steps
   | One_way_transport ->
-    State.One_way_transport.send s payload
+    State.One_way_transport.send s0 payload
 
 let read_handler_payload s msg =
   State.decrypt_and_hash s msg >>= fun (new_s, new_msg) ->
@@ -85,6 +74,7 @@ let read_handler_payload s msg =
     )
 
 let read_handler step s0 msg0 =
+  let open Pattern in
   match step with
   | E ->
     let (re, msg1) = State.split_dh s0 msg0 in
@@ -116,14 +106,14 @@ let rec compose_read_handlers s steps msg =
   | [] ->
     read_handler_payload s msg
 
-let read_message s =
-  match State.state s with
+let read_message s0 msg =
+  match State.state s0 with
   | Handshake_not_done ->
-    assert (not (State.is_initiator s));
-    let pattern = State.pattern s in
-    compose_read_handlers s (steps pattern)
+    assert (not (State.is_initiator s0));
+    State.pop_handshake_step s0 >>= fun (s1, steps) ->
+    compose_read_handlers s1 steps msg
   | One_way_transport ->
-    State.One_way_transport.receive s
+    State.One_way_transport.receive s0 msg
 
 let initialize s ~prologue ~public_keys =
   List.fold_left

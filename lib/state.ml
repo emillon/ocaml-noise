@@ -17,6 +17,7 @@ type t =
   ; transport_init_to_resp : Cipher_state.t option
   ; is_initiator : bool
   ; pattern : Pattern.t
+  ; remaining_handshake_steps : Pattern.step list list
   }
 
 let prep_h name hash =
@@ -54,6 +55,7 @@ let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e =
   ; transport_init_to_resp = None
   ; is_initiator
   ; pattern
+  ; remaining_handshake_steps = Pattern.all_steps pattern
   }
 
 let public_key_opt = function
@@ -163,6 +165,11 @@ let handshake_hash s =
   match state s with
   | Handshake_not_done -> None
   | One_way_transport -> Some (Symmetric_state.h s.symmetric_state)
+
+let pop_handshake_step s =
+  match s.remaining_handshake_steps with
+  | [] -> Error "Handshake complete"
+  | h::t -> Ok ({s with remaining_handshake_steps = t}, h)
 
 let decrypt_and_hash s0 ciphertext =
   decrypt_with_ad s0 ciphertext >>| fun (s1, plaintext) ->

@@ -67,3 +67,5 @@ type state =
   | One_way_transport
 
 val state : t -> state
+
+val pop_handshake_step : t -> (t * Pattern.step list, string) result
