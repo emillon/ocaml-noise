@@ -10,6 +10,7 @@ type t =
   | IX
   | NK
   | IK
+  | KN
 [@@deriving eq,show]
 
 let of_string = function
@@ -24,6 +25,7 @@ let of_string = function
   | "IX" -> Ok IX
   | "NK" -> Ok NK
   | "IK" -> Ok IK
+  | "KN" -> Ok KN
   | s -> Printf.ksprintf (fun e -> Error e) "Pattern.of_string: %s" s
 
 type step =
@@ -46,6 +48,7 @@ let all_steps = function
   | IX -> [[E; S]; [E; EE; SE; S; ES]]
   | NK -> [[E; ES]; [E; EE]]
   | IK -> [[E; ES; S; SS]; [E; EE; SE]]
+  | KN -> [[E]; [E; EE; SE]]
 
 type transport =
   | One_way
@@ -65,5 +68,6 @@ let transport = function
   | IX
   | NK
   | IK
+  | KN
     ->
     Two_way

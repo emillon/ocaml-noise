@@ -192,6 +192,7 @@ let handshake_len =
   | IX
   | NK
   | IK
+  | KN
     ->
     2
   | XN

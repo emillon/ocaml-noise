@@ -10,6 +10,7 @@ type t =
   | IX
   | NK
   | IK
+  | KN
 [@@deriving eq,show]
 
 val of_string : string -> (t, string) result
