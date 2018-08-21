@@ -1,5 +1,8 @@
-(executable
- (name noise_demo_one_way)
+(executables
+ (names
+  noise_demo_one_way
+  noise_demo_two_way
+ )
  (libraries
   noise
   lwt.unix
