@@ -24,6 +24,9 @@ let test_of_string =
   ; "NK" >:= should_be (Ok NK)
   ; "IK" >:= should_be (Ok IK)
   ; "KN" >:= should_be (Ok KN)
+  ; "KK" >:= should_be (Ok KK)
+  ; "KX" >:= should_be (Ok KX)
+  ; "XK" >:= should_be (Ok XK)
   ]
 
 let suite =

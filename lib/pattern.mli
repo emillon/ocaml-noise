@@ -11,6 +11,9 @@ type t =
   | NK
   | IK
   | KN
+  | KK
+  | KX
+  | XK
 [@@deriving eq,show]
 
 val of_string : string -> (t, string) result
