@@ -7,6 +7,7 @@ type t =
   | IN
   | XN
   | XX
+  | IX
 [@@deriving eq,show]
 
 let of_string = function
@@ -18,6 +19,7 @@ let of_string = function
   | "IN" -> Ok IN
   | "XN" -> Ok XN
   | "XX" -> Ok XX
+  | "IX" -> Ok IX
   | s -> Printf.ksprintf (fun e -> Error e) "Pattern.of_string: %s" s
 
 type step =
@@ -37,6 +39,7 @@ let all_steps = function
   | IN -> [[E; S]; [E; EE; SE]]
   | XN -> [[E]; [E; EE]; [S; SE]]
   | XX -> [[E]; [E; EE; S; ES]; [S; SE]]
+  | IX -> [[E; S]; [E; EE; SE; S; ES]]
 
 type transport =
   | One_way
@@ -53,5 +56,6 @@ let transport = function
   | IN
   | XN
   | XX
+  | IX
     ->
     Two_way
