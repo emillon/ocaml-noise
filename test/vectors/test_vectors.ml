@@ -93,10 +93,6 @@ let params vector =
   KU.unwrap "hash" vector.hash @@ fun hash ->
   Ok (pattern, dh, cipher, hash)
 
-let get_exn msg = function
-  | Some x -> x
-  | None -> Printf.ksprintf invalid_arg "get_exn: %s" msg
-
 let get_result_exn msg = function
   | Ok x -> x
   | Error e -> Printf.ksprintf invalid_arg "get_result_exn: %s (%s)" msg e
@@ -105,11 +101,11 @@ let is_some = function
   | Some _ -> true
   | None -> false
 
-let check_one_way_transport_message ~ctxt initiator responder message n =
+let check_transport_message ~ctxt initiator responder message n =
   let (new_resp, recovered_plaintext) =
     get_result_exn
       "transport message, responder"
-      ( Noise.State.One_way_transport.receive
+      ( Noise.State.receive_transport
           responder
           message.ciphertext
       )
@@ -123,7 +119,7 @@ let check_one_way_transport_message ~ctxt initiator responder message n =
     recovered_plaintext;
   let (new_init, generated_ciphertext) =
     get_result_exn "transport 1, sender"
-      ( Noise.State.One_way_transport.send
+      ( Noise.State.send_transport
           initiator
           message.payload
       )
@@ -182,9 +178,21 @@ let make_initiator_from_vector pattern dh cipher hash vector =
     ~prologue:vector.resp_prologue
     ~public_keys:(concat_some s_pub rs)
 
-let hd_tl_exn = function
-  | hd::tl -> (hd, tl)
-  | [] -> assert false
+let post_handshake pattern init0 resp0 msgs =
+  let open Noise.Pattern in
+  match pattern, msgs with
+  | (N | K | X), msg1::msgs ->
+    Noise.Protocol.write_message init0 msg1.payload >>= fun (init1, _) ->
+    Noise.Protocol.read_message resp0 msg1.ciphertext >>= fun (resp1, _) ->
+    Ok (init1, resp1, msgs)
+  | NN, msg1::msg2::msgs ->
+    Noise.Protocol.write_message init0 msg1.payload >>= fun (init1, _) ->
+    Noise.Protocol.read_message resp0 msg1.ciphertext >>= fun (resp1, _) ->
+    Noise.Protocol.write_message resp1 msg2.payload >>= fun (resp2, _) ->
+    Noise.Protocol.read_message init1 msg2.ciphertext >>= fun (init2, _) ->
+    Ok (init2, resp2, msgs)
+  | _ ->
+    Error "Wrong number of messages"
 
 let build_test_case vector =
   vector.name >:: fun ctxt ->
@@ -196,58 +204,48 @@ let build_test_case vector =
       skip_if true e
     | Ok (pattern, dh, cipher, hash) ->
       let responder = make_responder_from_vector pattern dh cipher hash vector in
-      let first_msg, transport_messages = hd_tl_exn vector.messages in
       let initiator = make_initiator_from_vector pattern dh cipher hash vector in
 
-      let initiator_post_handshake =
-        Noise.Protocol.write_message
-          initiator
-          first_msg.payload
-        >>= fun (n1, _) ->
-        Ok n1
-      in
-      let initiator_post_handshake =
-        get_result_exn "initiator_post_handshake" initiator_post_handshake
+      let (initiator_post_handshake, responder_post_handshake, transport_messages) =
+        get_result_exn "post_handshake" @@
+        post_handshake pattern initiator responder vector.messages
       in
       let initiator_hash =
-        get_exn "init hash" @@
         Noise.State.handshake_hash initiator_post_handshake
       in
-
-      let responder_post_handshake =
-        Noise.Protocol.read_message responder first_msg.ciphertext
-        >>= fun (n1, (_:Cstruct.t)) ->
-        Ok n1
-      in
-      let responder_post_handshake =
-        get_result_exn "responder_post_handshake" responder_post_handshake
-      in
       let responder_hash =
-        get_exn "resp hash" @@
         Noise.State.handshake_hash responder_post_handshake
       in
 
       assert_equal
         ~ctxt
-        ~cmp:[%eq: Test_helpers.Hex_string.t]
-        ~printer:[%show: Test_helpers.Hex_string.t]
+        ~cmp:[%eq: Test_helpers.Hex_string.t option]
+        ~printer:[%show: Test_helpers.Hex_string.t option]
         ~msg:"Handshake hashes should match"
         initiator_hash
         responder_hash;
       assert_equal
-        ~cmp:[%eq: Test_helpers.Hex_string.t]
-        ~printer:[%show: Test_helpers.Hex_string.t]
+        ~cmp:[%eq: Test_helpers.Hex_string.t option]
+        ~printer:[%show: Test_helpers.Hex_string.t option]
         ~msg:"Handshake hash should match the vector"
-        vector.handshake_hash
+        (Some vector.handshake_hash)
         initiator_hash;
 
+      let flip a b =
+        match Noise.Pattern.transport pattern with
+        | One_way ->
+          (a, b)
+        | Two_way ->
+          (b, a)
+      in
       let _ : Noise.State.t * Noise.State.t * int =
         List.fold_left
           (fun (init, resp, i) message ->
              let (new_init, new_resp) =
-               check_one_way_transport_message ~ctxt init resp message i
+               check_transport_message ~ctxt init resp message i
              in
-             (new_init, new_resp, i+1)
+             let (new_init1, new_resp1) = flip new_init new_resp in
+             (new_init1, new_resp1, i+1)
           )
           ( initiator_post_handshake
           , responder_post_handshake

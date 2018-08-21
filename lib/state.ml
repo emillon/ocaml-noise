@@ -15,6 +15,7 @@ type t =
   ; params : params
   ; cipher_state : Cipher_state.t
   ; transport_init_to_resp : Cipher_state.t option
+  ; transport_resp_to_init : Cipher_state.t option
   ; is_initiator : bool
   ; pattern : Pattern.t
   ; remaining_handshake_steps : Pattern.step list list
@@ -53,6 +54,7 @@ let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e =
   ; symmetric_state
   ; cipher_state = Cipher_state.empty
   ; transport_init_to_resp = None
+  ; transport_resp_to_init = None
   ; is_initiator
   ; pattern
   ; remaining_handshake_steps = Pattern.all_steps pattern
@@ -152,24 +154,24 @@ let decrypt_with_ad s ciphertext_and_tag =
   >>| fun (new_cs, plaintext) ->
   ({s with cipher_state = new_cs}, plaintext)
 
-type state =
-  | Handshake_not_done
-  | One_way_transport
-
-let state s =
-  match s.transport_init_to_resp with
-  | None -> Handshake_not_done
-  | Some _ -> One_way_transport
-
 let handshake_hash s =
-  match state s with
-  | Handshake_not_done -> None
-  | One_way_transport -> Some (Symmetric_state.h s.symmetric_state)
+  match s.transport_init_to_resp with
+  | None ->
+    None
+  | Some _ ->
+    Some (Symmetric_state.h s.symmetric_state)
 
-let pop_handshake_step s =
+type state =
+  | Handshake_step of Pattern.step list * bool
+  | Transport
+
+let next s =
   match s.remaining_handshake_steps with
-  | [] -> Error "Handshake complete"
-  | h::t -> Ok ({s with remaining_handshake_steps = t}, h)
+  | h::t ->
+    let is_last = t = [] in
+    ({s with remaining_handshake_steps = t}, Handshake_step (h, is_last))
+  | [] ->
+    (s, Transport)
 
 let decrypt_and_hash s0 ciphertext =
   decrypt_with_ad s0 ciphertext >>| fun (s1, plaintext) ->
@@ -192,46 +194,72 @@ let encrypt_and_hash s payload =
   encrypt_with_ad s payload >>| fun (n1, ciphertext) ->
   (mix_hash n1 ciphertext, ciphertext)
 
-module One_way_transport = struct
-  let with_init_to_resp s k =
-    match s.transport_init_to_resp with
+let transport_encrypt s plaintext cipher_state =
+  encrypt_with_ad_cs
+    cipher_state
+    ~ad:Cstruct.empty
+    s.params.cipher
+    plaintext
+
+let transport_decrypt s ciphertext cipher_state =
+  decrypt_with_ad_cs
+    cipher_state
+    ~ad:Cstruct.empty
+    s.params.cipher
+    ciphertext
+
+let get_transport_init_to_resp s =
+  s.transport_init_to_resp
+
+let set_transport_init_to_resp s v =
+  {s with transport_init_to_resp = v}
+
+let get_transport_resp_to_init s =
+  s.transport_resp_to_init
+
+let set_transport_resp_to_init s v =
+  {s with transport_resp_to_init = v}
+
+let with_ s ~send =
+  let (get, set) =
+    if s.is_initiator = send then
+      ( get_transport_init_to_resp
+      , set_transport_init_to_resp
+      )
+    else
+      ( get_transport_resp_to_init
+      , set_transport_resp_to_init
+      )
+  in
+  fun k ->
+    match get s with
     | Some cipher_state ->
       k cipher_state >>| fun (new_cs, result) ->
-      ( { s with
-          transport_init_to_resp = Some new_cs
-        }
+      ( set s (Some new_cs)
       , result
       )
     | None ->
-      Error "Handshake not finished"
+      Error "Transport is not setup"
 
-  let setup s =
-    let (init_to_resp, _) =
-      Symmetric_state.split s.symmetric_state
-    in
+let setup_transport s =
+  let (init_to_resp, resp_to_init) =
+    Symmetric_state.split s.symmetric_state
+  in
+  match Pattern.transport s.pattern with
+  | One_way ->
     { s with
       transport_init_to_resp = Some init_to_resp
     }
+  | Two_way ->
+    { s with
+      transport_init_to_resp = Some init_to_resp
+    ; transport_resp_to_init = Some resp_to_init
+    }
 
-  let send s plaintext =
-    if s.is_initiator then
-      with_init_to_resp s @@ fun cipher_state ->
-      encrypt_with_ad_cs
-        cipher_state
-        ~ad:Cstruct.empty
-        s.params.cipher
-        plaintext
-    else
-      Error "one way transport: cannot send"
+let send_transport s plaintext =
+  with_ s ~send:true @@
+  transport_encrypt s plaintext
 
-  let receive s ciphertext =
-    if s.is_initiator then
-      Error "one way transport: cannot receive"
-    else
-      with_init_to_resp s @@ fun cipher_state ->
-      decrypt_with_ad_cs
-        cipher_state
-        ~ad:Cstruct.empty
-        s.params.cipher
-        ciphertext
-end
+let receive_transport s ciphertext =
+  with_ s ~send:false @@
+  transport_decrypt s ciphertext

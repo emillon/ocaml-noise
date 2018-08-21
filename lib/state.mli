@@ -48,24 +48,20 @@ val split_dh :
   Cstruct.t ->
   Public_key.t * Cstruct.t
 
-module One_way_transport : sig
-  val setup : t -> t
+val setup_transport : t -> t
 
-  val receive :
-    t ->
-    Cstruct.t ->
-    (t * Cstruct.t, string) result
+val receive_transport :
+  t ->
+  Cstruct.t ->
+  (t * Cstruct.t, string) result
 
-  val send :
-    t ->
-    Cstruct.t ->
-    (t * Cstruct.t, string) result
-end
+val send_transport :
+  t ->
+  Cstruct.t ->
+  (t * Cstruct.t, string) result
 
 type state =
-  | Handshake_not_done
-  | One_way_transport
+  | Handshake_step of Pattern.step list * bool
+  | Transport
 
-val state : t -> state
-
-val pop_handshake_step : t -> (t * Pattern.step list, string) result
+val next : t -> t * state
