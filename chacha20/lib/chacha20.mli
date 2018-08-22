@@ -23,3 +23,10 @@ val make_state_for_encryption :
 val process : state -> state
 
 val serialize : state -> Cstruct.t
+
+val encrypt :
+  key:Cstruct.t ->
+  counter:int32 ->
+  nonce:Cstruct.t ->
+  Cstruct.t ->
+  (Cstruct.t, string) result

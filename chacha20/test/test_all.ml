@@ -1,5 +1,8 @@
 open OUnit2
 
+let equal_cstruct = Cstruct.equal
+let pp_cstruct = Cstruct.hexdump_pp
+
 let test_quarter_round =
   let test x expected ctxt =
     let got = Chacha20.quarter_round x in
@@ -139,8 +142,6 @@ let test_process =
 let test_serialize =
   let test state expected ctxt =
     let got = Chacha20.serialize state in
-    let equal_cstruct = Cstruct.equal in
-    let pp_cstruct = Cstruct.hexdump_pp in
     assert_equal
       ~ctxt
       ~cmp:[%eq: cstruct]
@@ -162,6 +163,48 @@ let test_serialize =
     )
   ]
 
+let test_encrypt =
+  let test ~key ~nonce ~counter ~plaintext expected_ciphertext ctxt =
+    let got = Chacha20.encrypt ~key ~nonce ~counter plaintext in
+    let expected = Ok expected_ciphertext in
+    assert_equal
+      ~ctxt
+      ~cmp:[%eq: (cstruct, string) result]
+      ~printer:[%show: (cstruct, string) result]
+      expected
+      got
+  in
+  let plaintext_sunscreen =
+    Cstruct.of_string @@
+    String.concat ""
+      [ "Ladies and Gentlemen of the class of '99: "
+      ; "If I could offer you only one tip for the "
+      ; "future, sunscreen would be it."
+      ]
+  in
+  "encrypt" >:::
+  [ "RFC 7539 2.4.2" >:: test
+    ~key:Data.key
+    ~nonce:(Hex.to_cstruct (`Hex "000000000000004a00000000"))
+    ~counter:1l
+    ~plaintext:plaintext_sunscreen
+    (Hex.to_cstruct
+       (`Hex
+          ( String.concat ""
+              [ "6e2e359a2568f98041ba0728dd0d6981"
+              ; "e97e7aec1d4360c20a27afccfd9fae0b"
+              ; "f91b65c5524733ab8f593dabcd62b357"
+              ; "1639d624e65152ab8f530c359f0861d8"
+              ; "07ca0dbf500d6a6156a38e088a22b65e"
+              ; "52bc514d16ccf806818ce91ab7793736"
+              ; "5af90bbf74a35be6b40b8eedf2785e42"
+              ; "874d"
+              ]
+          )
+       )
+    )
+  ]
+
 let suite =
   "Chacha20" >:::
   [ test_quarter_round
@@ -169,6 +212,7 @@ let suite =
   ; test_make_state_for_encryption
   ; test_process
   ; test_serialize
+  ; test_encrypt
   ]
 
 let () = run_test_tt_main suite

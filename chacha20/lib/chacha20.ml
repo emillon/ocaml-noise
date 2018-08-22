@@ -141,3 +141,53 @@ let serialize s =
     Cstruct.LE.set_uint32 cs (4*i) (get s i)
   done;
   cs
+
+let rec split_into_blocks cs =
+  let len = Cstruct.len cs in
+  let block_len = 64 in
+  if len = 0 then
+    []
+  else if len < block_len then
+    [cs]
+  else
+    let (block, rest) = Cstruct.split cs block_len in
+    block :: split_into_blocks rest
+
+let (>>=) x f =
+  match x with
+  | Ok y -> f y
+  | Error _ as e -> e
+
+let mapi_m f l =
+  let rec go n = function
+    | [] -> Ok []
+    | x::xs ->
+      f n x >>= fun y ->
+      go (n+1) xs >>= fun ys ->
+      Ok (y::ys)
+  in
+  go 0 l
+
+let xor_block a b =
+  let n = Cstruct.len a in
+  let r = Cstruct.create n in
+  for i = 0 to n - 1 do
+    let v_a = Cstruct.get_uint8 a i in
+    let v_b = Cstruct.get_uint8 b i in
+    let v = v_a lxor v_b in
+    Cstruct.set_uint8 r i v
+  done;
+  r
+
+let encrypt ~key ~counter ~nonce plaintext =
+  let blocks = split_into_blocks plaintext in
+  mapi_m
+    (fun j block ->
+       let count = Int32.add counter (Int32.of_int j) in
+       make_state_for_encryption ~key ~nonce ~count >>= fun s ->
+       let key_stream = process s |> serialize in
+       Ok (xor_block block key_stream)
+    )
+    blocks
+  >>= fun encrypted_blocks ->
+  Ok (Cstruct.concat encrypted_blocks)
