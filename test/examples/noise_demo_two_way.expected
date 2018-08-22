@@ -1,0 +1,3 @@
+init: got len(Hello) = 5
+init: got len(Noise) = 5
+init: got len(Protocol) = 8

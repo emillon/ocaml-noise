@@ -1,4 +1,4 @@
-(executables
+(tests
  (names
   noise_demo_one_way
   noise_demo_two_way
