@@ -1,0 +1,10 @@
+(test
+ (name test_all)
+ (libraries
+  oUnit
+  chacha20
+ )
+ (preprocess
+  (pps ppx_deriving.std)
+ )
+ )
