@@ -68,6 +68,14 @@ module Data = struct
       (`Hex "000000090000004a00000000")
 
   let count = 1l
+
+  let after_process =
+    Chacha20.make_state
+      [ 0xe4e7f110l; 0x15593bd1l; 0x1fdd0f50l; 0xc47120a3l
+      ; 0xc7f4d1c7l; 0x0368c033l; 0x9aaa2204l; 0x4e6cd4c3l
+      ; 0x466482d2l; 0x09aa9f07l; 0x05d7c214l; 0xa2028bd9l
+      ; 0xd19c12b5l; 0xb94e16del; 0xe883d0cbl; 0x4e3c50a2l
+      ]
 end
 
 let test_make_state_for_encryption =
@@ -125,12 +133,32 @@ let test_process =
   "process" >:::
   [ "RFC 7539 2.3.2" >:: test
     (Chacha20.make_state_for_encryption ~key ~nonce ~count |> get_exn)
-    (Chacha20.make_state
-       [ 0xe4e7f110l; 0x15593bd1l; 0x1fdd0f50l; 0xc47120a3l
-       ; 0xc7f4d1c7l; 0x0368c033l; 0x9aaa2204l; 0x4e6cd4c3l
-       ; 0x466482d2l; 0x09aa9f07l; 0x05d7c214l; 0xa2028bd9l
-       ; 0xd19c12b5l; 0xb94e16del; 0xe883d0cbl; 0x4e3c50a2l
-       ]
+    after_process
+  ]
+
+let test_serialize =
+  let test state expected ctxt =
+    let got = Chacha20.serialize state in
+    let equal_cstruct = Cstruct.equal in
+    let pp_cstruct = Cstruct.hexdump_pp in
+    assert_equal
+      ~ctxt
+      ~cmp:[%eq: cstruct]
+      ~printer:[%show: cstruct]
+      expected
+      got
+  in
+  "serialize" >:::
+  [ "RFC 7539 2.3.2" >:: test
+    Data.after_process
+    (Hex.to_cstruct
+       ( `Hex
+         ( "10f1e7e4d13b5915500fdd1fa32071c4"
+         ^ "c7d1f4c733c068030422aa9ac3d46c4e"
+         ^ "d2826446079faa0914c2d705d98b02a2"
+         ^ "b5129cd1de164eb9cbd083e8a2503c4e"
+         )
+       )
     )
   ]
 
@@ -140,6 +168,7 @@ let suite =
   ; test_quarter_round_state
   ; test_make_state_for_encryption
   ; test_process
+  ; test_serialize
   ]
 
 let () = run_test_tt_main suite

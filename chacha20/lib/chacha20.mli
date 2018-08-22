@@ -21,3 +21,5 @@ val make_state_for_encryption :
   (state, string) result
 
 val process : state -> state
+
+val serialize : state -> Cstruct.t

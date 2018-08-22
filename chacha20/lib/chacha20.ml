@@ -134,3 +134,10 @@ let process s0 =
     |> qr (3, 4, 9,14)
   in
   add_state s0 (iterate 10 inner_block s0)
+
+let serialize s =
+  let cs = Cstruct.create 64 in
+  for i = 0 to 15 do
+    Cstruct.LE.set_uint32 cs (4*i) (get s i)
+  done;
+  cs
