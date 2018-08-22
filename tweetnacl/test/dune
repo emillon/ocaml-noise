@@ -1,0 +1,7 @@
+(test
+ (name test_all)
+ (libraries oUnit hex tweetnacl)
+ (preprocess
+  (pps ppx_deriving.std)
+ )
+)

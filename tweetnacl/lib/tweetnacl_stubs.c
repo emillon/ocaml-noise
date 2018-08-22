@@ -20,3 +20,17 @@ CAMLprim value caml_tweetnacl_scalar_mult(value into, value priv, value pub)
 
 	CAMLreturn(Val_unit);
 }
+
+CAMLprim value caml_tweetnacl_poly1305(value into, value m, value n, value k)
+{
+	CAMLparam4(into, m, n, k);
+
+	crypto_onetimeauth_poly1305(
+		Caml_ba_data_val(into),
+		Caml_ba_data_val(m),
+		Int64_val(n),
+		Caml_ba_data_val(k)
+	);
+
+	CAMLreturn(Val_unit);
+}
