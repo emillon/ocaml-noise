@@ -19,3 +19,5 @@ val make_state_for_encryption :
   nonce:Cstruct.t ->
   count:int32 ->
   (state, string) result
+
+val process : state -> state

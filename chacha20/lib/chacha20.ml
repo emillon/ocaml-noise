@@ -104,3 +104,33 @@ let make_state_for_encryption ~key ~nonce ~count =
         ; nonce_words
         ]
     )
+
+let rec iterate n f x =
+  if n = 0 then
+    x
+  else
+    iterate (n - 1) f (f x)
+
+let add_state a b =
+  Array.init
+    16
+    (fun i ->
+       Int32.add
+         (get a i)
+         (get b i)
+    )
+
+let process s0 =
+  let qr i s = quarter_round_state s i in
+  let inner_block s =
+    s
+    |> qr (0, 4, 8,12)
+    |> qr (1, 5, 9,13)
+    |> qr (2, 6,10,14)
+    |> qr (3, 7,11,15)
+    |> qr (0, 5,10,15)
+    |> qr (1, 6,11,12)
+    |> qr (2, 7, 8,13)
+    |> qr (3, 4, 9,14)
+  in
+  add_state s0 (iterate 10 inner_block s0)

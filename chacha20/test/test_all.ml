@@ -53,6 +53,23 @@ let test_quarter_round_state =
       )
   ]
 
+module Data = struct
+  (* data from RFC 7539 2.3.2 *)
+  let key =
+    Hex.to_cstruct
+      ( `Hex
+          ( "000102030405060708090a0b0c0d0e0f"
+          ^ "101112131415161718191a1b1c1d1e1f"
+          )
+      )
+
+  let nonce =
+    Hex.to_cstruct
+      (`Hex "000000090000004a00000000")
+
+  let count = 1l
+end
+
 let test_make_state_for_encryption =
   let test ~key ~nonce ~count expected ctxt =
     let got = Chacha20.make_state_for_encryption ~key ~nonce ~count in
@@ -63,20 +80,7 @@ let test_make_state_for_encryption =
       expected
       got
   in
-  (* data from RFC 7539 2.3.2 *)
-  let key =
-    Hex.to_cstruct
-      ( `Hex
-          ( "000102030405060708090a0b0c0d0e0f"
-          ^ "101112131415161718191a1b1c1d1e1f"
-          )
-      )
-  in
-  let nonce =
-    Hex.to_cstruct
-      (`Hex "000000090000004a00000000")
-  in
-  let count = 1l in
+  let open Data in
   "make_state_for_encryption" >:::
   [ "key with wrong length" >:: test
       ~key:(Cstruct.create 3)
@@ -103,11 +107,39 @@ let test_make_state_for_encryption =
       )
   ]
 
+let test_process =
+  let test state expected ctxt =
+    let got = Chacha20.process state in
+    assert_equal
+      ~ctxt
+      ~cmp:[%eq: Chacha20.state]
+      ~printer:[%show: Chacha20.state]
+      expected
+      got
+  in
+  let get_exn = function
+    | Ok x -> x
+    | Error _ -> assert false
+  in
+  let open Data in
+  "process" >:::
+  [ "RFC 7539 2.3.2" >:: test
+    (Chacha20.make_state_for_encryption ~key ~nonce ~count |> get_exn)
+    (Chacha20.make_state
+       [ 0xe4e7f110l; 0x15593bd1l; 0x1fdd0f50l; 0xc47120a3l
+       ; 0xc7f4d1c7l; 0x0368c033l; 0x9aaa2204l; 0x4e6cd4c3l
+       ; 0x466482d2l; 0x09aa9f07l; 0x05d7c214l; 0xa2028bd9l
+       ; 0xd19c12b5l; 0xb94e16del; 0xe883d0cbl; 0x4e3c50a2l
+       ]
+    )
+  ]
+
 let suite =
   "Chacha20" >:::
   [ test_quarter_round
   ; test_quarter_round_state
   ; test_make_state_for_encryption
+  ; test_process
   ]
 
 let () = run_test_tt_main suite
