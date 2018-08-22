@@ -7,3 +7,8 @@ val (>>|) :
   ('a, 'e) result ->
   ('a -> 'b) ->
   ('b, 'e) result
+
+val equal_constant_time :
+  Cstruct.t ->
+  Cstruct.t ->
+  bool

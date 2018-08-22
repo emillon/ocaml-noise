@@ -78,7 +78,7 @@ let decrypt_with_ad ~key ~nonce ~ad ciphertext_and_tag =
   split ciphertext_and_tag >>= fun (ciphertext, received_tag) ->
   key_gen ~key ~nonce >>= fun otk ->
   let expected_tag = compute_tag ~otk ~ad ~ciphertext in
-  if Cstruct.equal expected_tag received_tag then
+  if equal_constant_time expected_tag received_tag then
     Chacha20.encrypt
       ~key
       ~counter:1l

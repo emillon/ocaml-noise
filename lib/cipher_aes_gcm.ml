@@ -32,7 +32,7 @@ let decrypt_with_ad ~key ~nonce ~ad ciphertext_and_tag =
     else
       let (ciphertext, tag) = Cstruct.split ciphertext_and_tag ciphertext_len in
       let result = decrypt ~key ~adata:ad ~iv ciphertext in
-      if Cstruct.equal result.tag tag then
+      if Util.equal_constant_time result.tag tag then
         Ok result.message
       else
         Error "Wrong tag"
