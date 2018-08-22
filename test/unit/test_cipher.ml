@@ -13,6 +13,7 @@ let test_of_string =
   in
   "of_string" >:::
   [ "AESGCM" >:= should_be (Ok AES_GCM)
+  ; "ChaChaPoly" >:= should_be (Ok Chacha_poly)
   ]
 
 let suite =

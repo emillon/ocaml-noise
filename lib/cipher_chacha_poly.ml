@@ -18,16 +18,7 @@ let key_gen ~key ~nonce =
   let s1 = Chacha20.process s0 in
   Cstruct.sub (Chacha20.serialize s1) 0 32
 
-let encrypt_with_ad_low ~key ~fixed ~iv ~ad plaintext =
-  let key = Private_key.bytes key in
-  let nonce = Cstruct.concat [fixed; iv] in
-  key_gen ~key ~nonce >>= fun otk ->
-  Chacha20.encrypt
-    ~key
-    ~counter:1l
-    ~nonce
-    plaintext
-  >>| fun ciphertext ->
+let compute_tag ~otk ~ad ~ciphertext =
   let mac_data =
     Cstruct.concat
       [ ad
@@ -38,7 +29,19 @@ let encrypt_with_ad_low ~key ~fixed ~iv ~ad plaintext =
       ; num_to_8_le_bytes (Cstruct.len ciphertext)
       ]
   in
-  let tag = Tweetnacl.poly1305 ~key:otk mac_data in
+  Tweetnacl.poly1305 ~key:otk mac_data
+
+let encrypt_with_ad_low ~key ~fixed ~iv ~ad plaintext =
+  let key = Private_key.bytes key in
+  let nonce = Cstruct.concat [fixed; iv] in
+  key_gen ~key ~nonce >>= fun otk ->
+  Chacha20.encrypt
+    ~key
+    ~counter:1l
+    ~nonce
+    plaintext
+  >>| fun ciphertext ->
+  let tag = compute_tag ~otk ~ad ~ciphertext in
   (ciphertext, tag)
 
 let encode_iv nonce =
@@ -55,3 +58,31 @@ let encrypt_with_ad ~key ~nonce ~ad plaintext =
     plaintext
   >>| fun (ciphertext, tag) ->
   (Cstruct.concat [ciphertext; tag])
+
+let split ciphertext_and_tag =
+  let tag_len = 128 / 8 in
+  let ciphertext_len = Cstruct.len ciphertext_and_tag - tag_len in
+  if ciphertext_len < 0 then
+    Error "Ciphertext is too short"
+  else
+    Ok (Cstruct.split ciphertext_and_tag ciphertext_len)
+
+let encode_nonce n =
+  let nonce = Cstruct.create 12 in
+  Cstruct.LE.set_uint64 nonce 4 n;
+  nonce
+
+let decrypt_with_ad ~key ~nonce ~ad ciphertext_and_tag =
+  let key = Private_key.bytes key in
+  let nonce = encode_nonce nonce in
+  split ciphertext_and_tag >>= fun (ciphertext, received_tag) ->
+  key_gen ~key ~nonce >>= fun otk ->
+  let expected_tag = compute_tag ~otk ~ad ~ciphertext in
+  if Cstruct.equal expected_tag received_tag then
+    Chacha20.encrypt
+      ~key
+      ~counter:1l
+      ~nonce
+      ciphertext
+  else
+    Error "Wrong tag"
