@@ -1,5 +1,8 @@
 (library
  (name chacha20)
+ (libraries
+  cstruct
+ )
  (preprocess
   (pps ppx_deriving.std)
  )

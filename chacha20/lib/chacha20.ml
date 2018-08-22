@@ -60,3 +60,47 @@ let quarter_round_state s (ia, ib, ic, id) =
   |> set ib nb
   |> set ic nc
   |> set id nd
+
+let make_state_for_encryption ~key ~nonce ~count =
+  if Cstruct.len key <> 32 then
+    Error "wrong key length"
+  else if Cstruct.len nonce <> 12 then
+    Error "wrong nonce length"
+  else
+    let constant_words =
+      [ 0x61707865l
+      ; 0x3320646el
+      ; 0x79622d32l
+      ; 0x6b206574l
+      ]
+    in
+    let key_words =
+      [ Cstruct.LE.get_uint32 key 0
+      ; Cstruct.LE.get_uint32 key 4
+      ; Cstruct.LE.get_uint32 key 8
+      ; Cstruct.LE.get_uint32 key 12
+      ; Cstruct.LE.get_uint32 key 16
+      ; Cstruct.LE.get_uint32 key 20
+      ; Cstruct.LE.get_uint32 key 24
+      ; Cstruct.LE.get_uint32 key 28
+      ]
+    in
+    let count_words =
+      [ count
+      ]
+    in
+    let nonce_words =
+      [ Cstruct.LE.get_uint32 nonce 0
+      ; Cstruct.LE.get_uint32 nonce 4
+      ; Cstruct.LE.get_uint32 nonce 8
+      ]
+    in
+    Ok (
+      make_state @@
+      List.concat
+        [ constant_words
+        ; key_words
+        ; count_words
+        ; nonce_words
+        ]
+    )

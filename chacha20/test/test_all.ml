@@ -53,10 +53,61 @@ let test_quarter_round_state =
       )
   ]
 
+let test_make_state_for_encryption =
+  let test ~key ~nonce ~count expected ctxt =
+    let got = Chacha20.make_state_for_encryption ~key ~nonce ~count in
+    assert_equal
+      ~ctxt
+      ~cmp:[%eq: (Chacha20.state, string) result]
+      ~printer:[%show: (Chacha20.state, string) result]
+      expected
+      got
+  in
+  (* data from RFC 7539 2.3.2 *)
+  let key =
+    Hex.to_cstruct
+      ( `Hex
+          ( "000102030405060708090a0b0c0d0e0f"
+          ^ "101112131415161718191a1b1c1d1e1f"
+          )
+      )
+  in
+  let nonce =
+    Hex.to_cstruct
+      (`Hex "000000090000004a00000000")
+  in
+  let count = 1l in
+  "make_state_for_encryption" >:::
+  [ "key with wrong length" >:: test
+      ~key:(Cstruct.create 3)
+      ~nonce
+      ~count
+      (Error "wrong key length")
+  ; "Nonce with wrong length" >:: test
+      ~key
+      ~nonce:(Cstruct.create 3)
+      ~count
+      (Error "wrong nonce length")
+  ; "OK" >:: test
+      ~key
+      ~nonce
+      ~count
+      ( Ok
+          ( Chacha20.make_state
+              [ 0x61707865l; 0x3320646el; 0x79622d32l; 0x6b206574l
+              ; 0x03020100l; 0x07060504l; 0x0b0a0908l; 0x0f0e0d0cl
+              ; 0x13121110l; 0x17161514l; 0x1b1a1918l; 0x1f1e1d1cl
+              ; 0x00000001l; 0x09000000l; 0x4a000000l; 0x00000000l
+              ]
+          )
+      )
+  ]
+
 let suite =
   "Chacha20" >:::
   [ test_quarter_round
   ; test_quarter_round_state
+  ; test_make_state_for_encryption
   ]
 
 let () = run_test_tt_main suite

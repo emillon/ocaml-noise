@@ -13,3 +13,9 @@ val quarter_round_state :
   state ->
   int * int * int * int ->
   state
+
+val make_state_for_encryption :
+  key:Cstruct.t ->
+  nonce:Cstruct.t ->
+  count:int32 ->
+  (state, string) result
