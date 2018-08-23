@@ -1,42 +1,38 @@
 open OUnit2
 open Noise.Util
 
-module KU = struct
-  type 'k t =
-    | Known of 'k
-    | Unknown of string
+let err_printf fmt =
+  Printf.ksprintf
+    (fun e -> Error e)
+    fmt
 
-  let unwrap what x f =
-    match x with
-    | Known y -> f y
-    | Unknown s ->
-      Printf.ksprintf
-        (fun e -> Error e)
-        "Unknown %s: %s"
-        what
-        s
-end
+let unwrap what x =
+  match x with
+  | Ok y -> Ok y
+  | Error s ->
+    err_printf
+      "Unknown %s: %s"
+      what
+      s
 
-module type OF_STRING = sig
-  type t
-  val of_string : string -> (t, string) result
-end
+let of_yojson_string what of_string json =
+  [%of_yojson: string] json >>| fun s ->
+  match of_string s with
+  | Ok _ as r -> r
+  | Error e ->
+    err_printf
+      "Unknown %s: %s"
+      what
+      e
 
-module Make_KU(M:OF_STRING) = struct
-  type t = M.t KU.t
-
-  let of_yojson json =
-    let open Ppx_deriving_yojson_runtime in
-    [%of_yojson: string] json >|= fun s ->
-    match M.of_string s with
-    | Ok x -> KU.Known x
-    | Error _ -> Unknown s
-end
-
-module Pattern = Make_KU(Noise.Pattern)
-module Dh = Make_KU(Noise.Dh)
-module Cipher = Make_KU(Noise.Cipher)
-module Hash = Make_KU(Noise.Hash)
+type pattern = (Noise.Pattern.t, string) result
+let pattern_of_yojson = of_yojson_string "pattern" Noise.Pattern.of_string
+type dh = (Noise.Dh.t, string) result
+let dh_of_yojson = of_yojson_string "dh" Noise.Dh.of_string
+type cipher = (Noise.Cipher.t, string) result
+let cipher_of_yojson = of_yojson_string "cipher" Noise.Cipher.of_string
+type hash = (Noise.Hash.t, string) result
+let hash_of_yojson = of_yojson_string "hash" Noise.Hash.of_string
 
 type message =
   { ciphertext : Test_helpers.Hex_string.t
@@ -48,24 +44,22 @@ module Public_key = struct
   type t = Noise.Public_key.t
 
   let of_yojson json =
-    let open Ppx_deriving_yojson_runtime in
-    [%of_yojson: Test_helpers.Hex_string.t] json >|= Noise.Public_key.of_bytes
+    [%of_yojson: Test_helpers.Hex_string.t] json >>| Noise.Public_key.of_bytes
 end
 
 module Private_key = struct
   type t = Noise.Private_key.t
 
   let of_yojson json =
-    let open Ppx_deriving_yojson_runtime in
-    [%of_yojson: Test_helpers.Hex_string.t] json >|= Noise.Private_key.of_bytes
+    [%of_yojson: Test_helpers.Hex_string.t] json >>| Noise.Private_key.of_bytes
 end
 
 type test_vector =
   { name : string
-  ; pattern : Pattern.t
-  ; dh : Dh.t
-  ; cipher: Cipher.t
-  ; hash : Hash.t
+  ; pattern : pattern
+  ; dh : dh
+  ; cipher: cipher
+  ; hash : hash
   ; init_prologue : string
   ; init_ephemeral : Private_key.t
   ; init_remote_static : Public_key.t option [@default None]
@@ -87,11 +81,11 @@ type test_vector_file =
 [@@deriving of_yojson]
 
 let params vector =
-  KU.unwrap "pattern" vector.pattern @@ fun pattern ->
-  KU.unwrap "DH" vector.dh @@ fun dh ->
-  KU.unwrap "cipher" vector.cipher @@ fun cipher ->
-  KU.unwrap "hash" vector.hash @@ fun hash ->
-  Ok (pattern, dh, cipher, hash)
+  unwrap "pattern" vector.pattern >>= fun pattern ->
+  unwrap "DH" vector.dh >>= fun dh ->
+  unwrap "cipher" vector.cipher >>= fun cipher ->
+  unwrap "hash" vector.hash >>| fun hash ->
+  (pattern, dh, cipher, hash)
 
 let get_result_exn msg = function
   | Ok x -> x
