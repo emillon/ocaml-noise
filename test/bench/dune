@@ -1,0 +1,9 @@
+(executable
+ (name bench)
+ (libraries noise benchmark)
+ )
+
+(alias
+ (name bench)
+ (action (run ./bench.exe --all))
+)
