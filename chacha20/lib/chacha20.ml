@@ -61,49 +61,68 @@ let quarter_round_state s (ia, ib, ic, id) =
   |> set ic nc
   |> set id nd
 
-let make_state_for_encryption ~key ~nonce ~count =
-  if Cstruct.len key <> 32 then
-    Error "wrong key length"
-  else if Cstruct.len nonce <> 12 then
-    Error "wrong nonce length"
+type key = Key of Cstruct.t
+
+let make_key key =
+  if Cstruct.len key = 32 then
+    Ok (Key key)
   else
-    let constant_words =
-      [ 0x61707865l
-      ; 0x3320646el
-      ; 0x79622d32l
-      ; 0x6b206574l
-      ]
-    in
-    let key_words =
-      [ Cstruct.LE.get_uint32 key 0
-      ; Cstruct.LE.get_uint32 key 4
-      ; Cstruct.LE.get_uint32 key 8
-      ; Cstruct.LE.get_uint32 key 12
-      ; Cstruct.LE.get_uint32 key 16
-      ; Cstruct.LE.get_uint32 key 20
-      ; Cstruct.LE.get_uint32 key 24
-      ; Cstruct.LE.get_uint32 key 28
-      ]
-    in
-    let count_words =
-      [ count
-      ]
-    in
-    let nonce_words =
-      [ Cstruct.LE.get_uint32 nonce 0
-      ; Cstruct.LE.get_uint32 nonce 4
-      ; Cstruct.LE.get_uint32 nonce 8
-      ]
-    in
-    Ok (
-      make_state @@
-      List.concat
-        [ constant_words
-        ; key_words
-        ; count_words
-        ; nonce_words
-        ]
-    )
+    Error "wrong key length"
+
+let key_words (Key key) =
+  [ Cstruct.LE.get_uint32 key 0
+  ; Cstruct.LE.get_uint32 key 4
+  ; Cstruct.LE.get_uint32 key 8
+  ; Cstruct.LE.get_uint32 key 12
+  ; Cstruct.LE.get_uint32 key 16
+  ; Cstruct.LE.get_uint32 key 20
+  ; Cstruct.LE.get_uint32 key 24
+  ; Cstruct.LE.get_uint32 key 28
+  ]
+
+type nonce = Nonce of Cstruct.t
+
+let make_nonce nonce =
+  if Cstruct.len nonce = 12 then
+    Ok (Nonce nonce)
+  else
+    Error "wrong nonce length"
+
+let nonce_words (Nonce nonce) =
+  [ Cstruct.LE.get_uint32 nonce 0
+  ; Cstruct.LE.get_uint32 nonce 4
+  ; Cstruct.LE.get_uint32 nonce 8
+  ]
+
+let (>>=) x f =
+  match x with
+  | Ok y -> f y
+  | Error _ as e -> e
+
+let make_state_for_encryption_checked ~key ~nonce count =
+  let constant_words =
+    [ 0x61707865l
+    ; 0x3320646el
+    ; 0x79622d32l
+    ; 0x6b206574l
+    ]
+  in
+  let count_words =
+    [ count
+    ]
+  in
+  make_state @@
+  List.concat
+    [ constant_words
+    ; key_words key
+    ; count_words
+    ; nonce_words nonce
+    ]
+
+let make_state_for_encryption ~key ~nonce ~count =
+  make_key key >>= fun key ->
+  make_nonce nonce >>= fun nonce ->
+  Ok (make_state_for_encryption_checked ~key ~nonce count)
 
 let rec iterate n f x =
   if n = 0 then
@@ -153,21 +172,6 @@ let rec split_into_blocks cs =
     let (block, rest) = Cstruct.split cs block_len in
     block :: split_into_blocks rest
 
-let (>>=) x f =
-  match x with
-  | Ok y -> f y
-  | Error _ as e -> e
-
-let mapi_m f l =
-  let rec go n = function
-    | [] -> Ok []
-    | x::xs ->
-      f n x >>= fun y ->
-      go (n+1) xs >>= fun ys ->
-      Ok (y::ys)
-  in
-  go 0 l
-
 let xor_block a b =
   let n = Cstruct.len a in
   let r = Cstruct.create n in
@@ -180,14 +184,19 @@ let xor_block a b =
   r
 
 let encrypt ~key ~counter ~nonce plaintext =
+  make_key key >>= fun key ->
+  make_nonce nonce >>= fun nonce ->
   let blocks = split_into_blocks plaintext in
-  mapi_m
-    (fun j block ->
-       let count = Int32.add counter (Int32.of_int j) in
-       make_state_for_encryption ~key ~nonce ~count >>= fun s ->
-       let key_stream = process s |> serialize in
-       Ok (xor_block block key_stream)
-    )
-    blocks
-  >>= fun encrypted_blocks ->
+  let encrypted_blocks =
+    List.mapi
+      (fun j block ->
+         Int32.of_int j
+         |> Int32.add counter
+         |> make_state_for_encryption_checked ~key ~nonce
+         |> process
+         |> serialize
+         |> xor_block block
+      )
+      blocks
+  in
   Ok (Cstruct.concat encrypted_blocks)
