@@ -4,6 +4,9 @@ let crypto_random_bytes n =
   close_in ic;
   Cstruct.of_string s
 
+let random_private_key len =
+  Noise.Private_key.of_bytes @@ crypto_random_bytes len
+
 let ensure_ok r =
   match r with
   | Ok _ -> ()
@@ -24,8 +27,8 @@ let bench_ciphers () =
     |> ensure_ok
   in
 
-  let key_aes = Noise.Private_key.of_bytes @@ crypto_random_bytes 16 in
-  let key_chacha = Noise.Private_key.of_bytes @@ crypto_random_bytes 32 in
+  let key_aes = random_private_key 16 in
+  let key_chacha = random_private_key 32 in
 
   Benchmark.throughputN 1
       [ ("AES-GCM", bench_cipher Noise.Cipher.AES_GCM, key_aes)
@@ -46,12 +49,25 @@ let bench_hashes () =
       ; ("BLAKE2b", bench_hash Noise.Hash.BLAKE2b, ())
       ]
 
+let bench_dh () =
+  let priv = random_private_key 32 in
+  let pub = Noise.Dh_25519.public_key @@ random_private_key 32 in
+
+  let bench_dh dh () : Cstruct.t =
+    Noise.Dh.key_exchange dh ~priv ~pub
+  in
+
+  Benchmark.throughputN 1
+    [ ("X25519", bench_dh Noise.Dh.Curve_25519, ())
+    ]
+
 let () =
   let open Benchmark.Tree in
   register @@
   "Noise" @>>>
   [ "ciphers" @> lazy (bench_ciphers ())
   ; "hashes" @> lazy (bench_hashes ())
+  ; "dh" @> lazy (bench_dh ())
   ]
 
 let () = Benchmark.Tree.run_global ()
