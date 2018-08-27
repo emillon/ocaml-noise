@@ -1,6 +1,6 @@
 (alias
  (name runtest)
- (deps noise-c-basic.txt)
+ (deps (glob_files *.txt))
  (action
   (run ./test_vectors.exe)
  )

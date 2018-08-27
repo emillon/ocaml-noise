@@ -54,33 +54,145 @@ module Private_key = struct
     [%of_yojson: Test_helpers.Hex_string.t] json >>| Noise.Private_key.of_bytes
 end
 
-type test_vector =
-  { name : string
-  ; pattern : pattern
-  ; dh : dh
-  ; cipher: cipher
-  ; hash : hash
-  ; init_prologue : string
-  ; init_ephemeral : Private_key.t
-  ; init_remote_static : Public_key.t option [@default None]
-  ; resp_prologue : Test_helpers.Hex_string.t
-  ; resp_static : Private_key.t option [@default None]
-  ; messages : message list
-  ; handshake_hash : Test_helpers.Hex_string.t
-  ; init_psk : string option [@default None]
-  ; init_static : Private_key.t option [@default None]
-  ; resp_ephemeral : Private_key.t option [@default None]
-  ; resp_psk : string option [@default None]
-  ; resp_remote_static : Public_key.t option [@default None]
-  }
-[@@deriving of_yojson]
+module Test_vector = struct
+  type repr =
+    { name : string option [@default None]
+    ; protocol_name : string option [@default None]
+    ; pattern : pattern option [@default None]
+    ; dh : dh option [@default None]
+    ; cipher: cipher option [@default None]
+    ; hash : hash option [@default None]
+    ; init_prologue : string
+    ; init_ephemeral : Private_key.t
+    ; init_remote_static : Public_key.t option [@default None]
+    ; resp_prologue : Test_helpers.Hex_string.t
+    ; resp_static : Private_key.t option [@default None]
+    ; messages : message list
+    ; handshake_hash : Test_helpers.Hex_string.t
+    ; init_psk : string option [@default None]
+    ; init_static : Private_key.t option [@default None]
+    ; resp_ephemeral : Private_key.t option [@default None]
+    ; resp_psk : string option [@default None]
+    ; resp_remote_static : Public_key.t option [@default None]
+    ; init_psks : Yojson.Safe.json [@default `Null]
+    ; resp_psks : Yojson.Safe.json [@default `Null]
+    }
+  [@@deriving of_yojson]
+
+  type t =
+    { name : string
+    ; pattern : pattern
+    ; dh : dh
+    ; cipher: cipher
+    ; hash : hash
+    ; init_prologue : string
+    ; init_ephemeral : Private_key.t
+    ; init_remote_static : Public_key.t option
+    ; resp_prologue : Test_helpers.Hex_string.t
+    ; resp_static : Private_key.t option
+    ; messages : message list
+    ; handshake_hash : Test_helpers.Hex_string.t
+    ; has_psk : bool
+    ; init_static : Private_key.t option
+    ; resp_ephemeral : Private_key.t option
+    ; resp_remote_static : Public_key.t option
+    }
+
+  let is_some = function
+    | Some _ -> true
+    | None -> false
+
+  let name_of_repr (repr:repr) =
+    match repr.name, repr.protocol_name with
+    | None, None
+      ->
+      Error "no name"
+    | Some n, None
+    | None, Some n
+      ->
+      Ok n
+    | Some _, Some _
+      ->
+      Error "name and protocol_name are set"
+
+  let parse_parameters name =
+    match String.split_on_char '_' name with
+    | ["Noise"; pattern; dh; cipher; hash] ->
+      Ok (pattern, dh, cipher, hash)
+    | _ ->
+      Error "Cannot parse parameters"
+
+  let hash_of_repr (repr:repr) name =
+    match repr.hash with
+    | Some h -> Ok h
+    | None ->
+      parse_parameters name >>| fun (_, _, _, hash_name) ->
+      Noise.Hash.of_string hash_name
+
+  let cipher_of_repr (repr:repr) name =
+    match repr.cipher with
+    | Some x -> Ok x
+    | None ->
+      parse_parameters name >>| fun (_, _, cipher_name, _) ->
+      Noise.Cipher.of_string cipher_name
+
+  let dh_of_repr (repr:repr) name =
+    match repr.dh with
+    | Some x -> Ok x
+    | None ->
+      parse_parameters name >>| fun (_, dh_name, _, _) ->
+      Noise.Dh.of_string dh_name
+
+  let pattern_of_repr (repr:repr) name =
+    match repr.pattern with
+    | Some x -> Ok x
+    | None ->
+      parse_parameters name >>| fun (pattern_name, _, _, _) ->
+      Noise.Pattern.of_string pattern_name
+
+  let wrap_error f json =
+    match f json with
+    | Ok _ as x -> x
+    | Error e ->
+      err_printf
+        "Got error %s while parsing: %s"
+        e
+        (Yojson.Safe.pretty_to_string json)
+
+  let of_yojson json =
+    wrap_error repr_of_yojson json >>= fun repr ->
+    let has_psk = is_some repr.init_psk in
+    name_of_repr repr >>= fun name ->
+    hash_of_repr repr name >>= fun hash ->
+    cipher_of_repr repr name >>= fun cipher ->
+    dh_of_repr repr name >>= fun dh ->
+    pattern_of_repr repr name >>= fun pattern ->
+    Ok
+      { name
+      ; pattern
+      ; dh
+      ; cipher
+      ; hash
+      ; init_prologue = repr.init_prologue
+      ; init_ephemeral = repr.init_ephemeral
+      ; init_remote_static = repr.init_remote_static
+      ; resp_prologue = repr.resp_prologue
+      ; resp_static = repr.resp_static
+      ; messages = repr.messages
+      ; handshake_hash = repr.handshake_hash
+      ; has_psk
+      ; init_static = repr.init_static
+      ; resp_ephemeral = repr.resp_ephemeral
+      ; resp_remote_static = repr.resp_remote_static
+      }
+end
 
 type test_vector_file =
-  { vectors : test_vector list
+  { vectors : Test_vector.t list
   }
 [@@deriving of_yojson]
 
-let params vector =
+let params (vector:Test_vector.t) =
   unwrap "pattern" vector.pattern >>= fun pattern ->
   unwrap "DH" vector.dh >>= fun dh ->
   unwrap "cipher" vector.cipher >>= fun cipher ->
@@ -90,10 +202,6 @@ let params vector =
 let get_result_exn msg = function
   | Ok x -> x
   | Error e -> Printf.ksprintf invalid_arg "get_result_exn: %s (%s)" msg e
-
-let is_some = function
-  | Some _ -> true
-  | None -> false
 
 let check_transport_message ~ctxt initiator responder message n =
   let (new_resp, recovered_plaintext) =
@@ -134,7 +242,7 @@ let concat_some a b =
   | None, Some sb -> [sb]
   | Some sa, Some sb -> [sa; sb]
 
-let make_responder_from_vector pattern dh cipher hash vector =
+let make_responder_from_vector pattern dh cipher hash (vector:Test_vector.t) =
   let e = vector.resp_ephemeral in
   let s = vector.resp_static in
   let static_pub = vector.init_remote_static in
@@ -153,7 +261,7 @@ let make_responder_from_vector pattern dh cipher hash vector =
     ~prologue:vector.resp_prologue
     ~public_keys:(concat_some rs static_pub)
 
-let make_initiator_from_vector pattern dh cipher hash vector =
+let make_initiator_from_vector pattern dh cipher hash (vector:Test_vector.t) =
   let rs = vector.init_remote_static in
   let e = vector.init_ephemeral in
   let s = vector.init_static in
@@ -195,11 +303,9 @@ let post_handshake pattern init0 resp0 msgs =
   | _ ->
     Error "Wrong number of messages"
 
-let build_test_case vector =
+let build_test_case (vector:Test_vector.t) =
   vector.name >:: fun ctxt ->
-    skip_if
-      (is_some vector.init_psk)
-      "PSK is not supported";
+    skip_if vector.has_psk "PSK is not supported";
     match params vector with
     | Error e ->
       skip_if true e
@@ -259,12 +365,18 @@ let build_test_case vector =
 let run path =
   let json = Yojson.Safe.from_file path in
   match test_vector_file_of_yojson json with
-  | Ok { vectors } -> path >::: List.map build_test_case vectors
-  | Error e -> failwith e
+  | Ok { vectors } ->
+    path >::: List.map build_test_case vectors
+  | Error e ->
+    Printf.ksprintf
+      failwith
+      "Cannot parse file %s: %s"
+      path e
 
 let suite =
   "noise-c test vectors" >:::
   [ run "noise-c-basic.txt"
+  ; run "cacophony.txt"
   ]
 
 let () =

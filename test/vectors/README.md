@@ -1,1 +1,1 @@
-These test vectors come from `noise-c`: <https://github.com/rweather/noise-c>.
+These test vectors come [the wiki](https://github.com/noiseprotocol/noise_wiki/wiki/Test-vectors).
