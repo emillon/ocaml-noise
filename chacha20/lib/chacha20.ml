@@ -187,9 +187,12 @@ let encrypt ~key ~counter ~nonce plaintext =
   make_key key >>= fun key ->
   make_nonce nonce >>= fun nonce ->
   let blocks = split_into_blocks plaintext in
+  let rj = ref 0 in
   let encrypted_blocks =
-    List.mapi
-      (fun j block ->
+    List.rev_map
+      (fun block ->
+         let j = !rj in
+         incr rj;
          Int32.of_int j
          |> Int32.add counter
          |> make_state_for_encryption_checked ~key ~nonce
@@ -198,5 +201,6 @@ let encrypt ~key ~counter ~nonce plaintext =
          |> xor_block block
       )
       blocks
+    |> List.rev
   in
   Ok (Cstruct.concat encrypted_blocks)
