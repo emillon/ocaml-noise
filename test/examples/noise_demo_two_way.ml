@@ -27,6 +27,7 @@ let make_state ~is_initiator =
     ~dh
     ~cipher:Noise.Cipher.AES_GCM
     ~rs:None
+    ~psk:None
 
 exception Noise_protocol_error of string
 

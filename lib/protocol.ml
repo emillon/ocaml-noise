@@ -27,7 +27,7 @@ let write_handler step s0 =
       | None ->
         Error "No ephemeral public key"
       | Some epub ->
-        let s1 = State.mix_hash s0 (Public_key.bytes epub) in
+        let s1 = State.mix_hash_and_psk s0 epub in
         Ok (s1, Public_key.bytes epub)
     end
   | ES ->
@@ -61,6 +61,8 @@ let write_handler step s0 =
     return @@ handle_ss s0
   | EE ->
     return @@ handle_ee s0
+  | PSK ->
+    return @@ State.mix_key_and_hash_psk s0
 
 let compose_write_handlers payload state steps =
   let rec go msgs s = function
@@ -101,7 +103,7 @@ let read_handler step s0 msg0 =
   | E ->
     let (re, msg1) = State.split_dh ~clear:true s0 msg0 in
     State.set_re s0 re >>= fun s1 ->
-    let s2 = State.mix_hash s1 (Public_key.bytes re) in
+    let s2 = State.mix_hash_and_psk s1 re in
     Ok (s2, msg1)
   | ES ->
     let (local, remote) =
@@ -133,6 +135,9 @@ let read_handler step s0 msg0 =
     Ok (s1, msg0)
   | EE ->
     handle_ee s0 >>= fun s1 ->
+    Ok (s1, msg0)
+  | PSK ->
+    State.mix_key_and_hash_psk s0 >>= fun s1 ->
     Ok (s1, msg0)
 
 let rec compose_read_handlers s steps msg =

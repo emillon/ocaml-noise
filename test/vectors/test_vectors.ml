@@ -69,13 +69,13 @@ module Test_vector = struct
     ; resp_static : Private_key.t option [@default None]
     ; messages : message list
     ; handshake_hash : Test_helpers.Hex_string.t
-    ; init_psk : string option [@default None]
+    ; init_psk : Test_helpers.Hex_string.t option [@default None]
     ; init_static : Private_key.t option [@default None]
     ; resp_ephemeral : Private_key.t option [@default None]
-    ; resp_psk : string option [@default None]
+    ; resp_psk : Test_helpers.Hex_string.t option [@default None]
     ; resp_remote_static : Public_key.t option [@default None]
-    ; init_psks : Yojson.Safe.json [@default `Null]
-    ; resp_psks : Yojson.Safe.json [@default `Null]
+    ; init_psks : Test_helpers.Hex_string.t list option [@default None]
+    ; resp_psks : Test_helpers.Hex_string.t list option [@default None]
     }
   [@@deriving of_yojson]
 
@@ -92,15 +92,11 @@ module Test_vector = struct
     ; resp_static : Private_key.t option
     ; messages : message list
     ; handshake_hash : Test_helpers.Hex_string.t
-    ; has_psk : bool
+    ; psk : Test_helpers.Hex_string.t option
     ; init_static : Private_key.t option
     ; resp_ephemeral : Private_key.t option
     ; resp_remote_static : Public_key.t option
     }
-
-  let is_some = function
-    | Some _ -> true
-    | None -> false
 
   let name_of_repr (repr:repr) =
     match repr.name, repr.protocol_name with
@@ -159,9 +155,52 @@ module Test_vector = struct
         e
         (Yojson.Safe.pretty_to_string json)
 
+  let psk_of_repr (repr:repr) =
+    let from_psk =
+      match repr.init_psk, repr.resp_psk with
+      | Some a, Some b when Cstruct.equal a b
+        ->
+        Ok (Some a)
+      | None, None
+        ->
+        Ok None
+      | Some _, None
+      | None, Some _
+      | Some _, Some _
+        ->
+        Error "from_psk"
+    in
+    let from_psks =
+      match repr.init_psks, repr.resp_psks with
+      | Some [a], Some [b] when Cstruct.equal a b
+        ->
+        Ok (Some a)
+      | None, None
+        ->
+        Ok None
+      | Some _, None
+      | None, Some _
+      | Some _, Some _
+        ->
+        Error "from_psks"
+    in
+    from_psk >>= fun from_psk ->
+    from_psks >>= fun from_psks ->
+    match from_psk, from_psks with
+    | None, None
+      ->
+      Ok None
+    | None, Some a
+    | Some a, None
+      ->
+      Ok (Some a)
+    | Some _, Some _
+      ->
+      Error "psk_of_repr"
+
   let of_yojson json =
     wrap_error repr_of_yojson json >>= fun repr ->
-    let has_psk = is_some repr.init_psk in
+    psk_of_repr repr >>= fun psk ->
     name_of_repr repr >>= fun name ->
     hash_of_repr repr name >>= fun hash ->
     cipher_of_repr repr name >>= fun cipher ->
@@ -180,7 +219,7 @@ module Test_vector = struct
       ; resp_static = repr.resp_static
       ; messages = repr.messages
       ; handshake_hash = repr.handshake_hash
-      ; has_psk
+      ; psk
       ; init_static = repr.init_static
       ; resp_ephemeral = repr.resp_ephemeral
       ; resp_remote_static = repr.resp_remote_static
@@ -192,7 +231,16 @@ type test_vector_file =
   }
 [@@deriving of_yojson]
 
+let check_prefix s =
+  let expected = "Noise_" in
+  let start = String.sub s 0 (String.length expected) in
+  if String.equal start expected then
+    Ok ()
+  else
+    Error "Wrong prefix"
+
 let params (vector:Test_vector.t) =
+  check_prefix vector.name >>= fun () ->
   unwrap "pattern" vector.pattern >>= fun pattern ->
   unwrap "DH" vector.dh >>= fun dh ->
   unwrap "cipher" vector.cipher >>= fun cipher ->
@@ -247,6 +295,7 @@ let make_responder_from_vector pattern dh cipher hash (vector:Test_vector.t) =
   let s = vector.resp_static in
   let static_pub = vector.init_remote_static in
   let rs = vector.resp_remote_static in
+  let psk = vector.psk in
   Noise.State.make
     ~name:vector.name
     ~pattern
@@ -257,6 +306,7 @@ let make_responder_from_vector pattern dh cipher hash (vector:Test_vector.t) =
     ~dh
     ~cipher
     ~hash
+    ~psk
   |> Noise.Protocol.initialize
     ~prologue:vector.resp_prologue
     ~public_keys:(concat_some rs static_pub)
@@ -266,6 +316,7 @@ let make_initiator_from_vector pattern dh cipher hash (vector:Test_vector.t) =
   let e = vector.init_ephemeral in
   let s = vector.init_static in
   let s_pub = vector.resp_remote_static in
+  let psk = vector.psk in
   Noise.State.make
     ~name:vector.name
     ~is_initiator:true
@@ -276,6 +327,7 @@ let make_initiator_from_vector pattern dh cipher hash (vector:Test_vector.t) =
     ~dh
     ~cipher
     ~hash
+    ~psk
   |> Noise.Protocol.initialize
     ~prologue:vector.resp_prologue
     ~public_keys:(concat_some s_pub rs)
@@ -305,7 +357,6 @@ let post_handshake pattern init0 resp0 msgs =
 
 let build_test_case (vector:Test_vector.t) =
   vector.name >:: fun ctxt ->
-    skip_if vector.has_psk "PSK is not supported";
     match params vector with
     | Error e ->
       skip_if true e

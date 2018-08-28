@@ -19,6 +19,7 @@ type t =
   ; is_initiator : bool
   ; pattern : Pattern.t
   ; remaining_handshake_steps : Pattern.step list list
+  ; psk : Cstruct.t option
   }
 
 let prep_h name hash =
@@ -32,7 +33,7 @@ let prep_h name hash =
   else
     Hash.hash hash buf_name
 
-let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e =
+let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e ~psk =
   let h = prep_h name hash in
   let params =
     { hash
@@ -58,6 +59,7 @@ let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e =
   ; is_initiator
   ; pattern
   ; remaining_handshake_steps = Pattern.all_steps pattern
+  ; psk
   }
 
 let public_key_opt = function
@@ -99,16 +101,34 @@ let mix_hash s data =
         data
   }
 
-let mix_key s input =
-  let (new_symmetric_state, new_key) =
-    Symmetric_state.mix_key
-      s.symmetric_state
-      input
-  in
+let set_symmetric_state_and_key s (symmetric_state, key) =
   { s with
-      cipher_state = Cipher_state.create new_key
-    ; symmetric_state = new_symmetric_state
+    cipher_state = Cipher_state.create key
+  ; symmetric_state
   }
+
+let mix_key s input =
+  Symmetric_state.mix_key
+    s.symmetric_state
+    input
+  |> set_symmetric_state_and_key s
+
+let mix_hash_and_psk s0 key =
+  let input = Public_key.bytes key in
+  let s1 = mix_hash s0 input in
+  match s1.psk with
+  | Some _ -> mix_key s1 input
+  | None -> s1
+
+let get_psk s =
+  match s.psk with
+  | Some psk -> Ok psk
+  | None -> Error "no psk"
+
+let mix_key_and_hash_psk s =
+  get_psk s >>| fun psk ->
+  Symmetric_state.mix_key_and_hash s.symmetric_state psk
+  |> set_symmetric_state_and_key s
 
 type key_type = Static | Ephemeral
 

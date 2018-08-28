@@ -30,6 +30,7 @@ let make_state ~is_initiator =
     ~hash:Noise.Hash.SHA512
     ~dh
     ~cipher:Noise.Cipher.AES_GCM
+    ~psk:None
 
 exception Noise_protocol_error of string
 

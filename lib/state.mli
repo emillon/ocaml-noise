@@ -10,6 +10,7 @@ val make :
   s:Private_key.t option ->
   rs:Public_key.t option ->
   e:Private_key.t option ->
+  psk:Cstruct.t option ->
   t
 
 val e_pub : t -> Public_key.t option
@@ -25,11 +26,17 @@ type key_type =
 
 val mix_hash : t -> Cstruct.t -> t
 
+val mix_hash_and_psk : t -> Public_key.t -> t
+
+val mix_key : t -> Cstruct.t -> t
+
 val mix_dh_key :
   t ->
   local:key_type ->
   remote:key_type ->
   (t, string) result
+
+val mix_key_and_hash_psk : t -> (t, string) result
 
 val decrypt_and_hash :
   t ->
