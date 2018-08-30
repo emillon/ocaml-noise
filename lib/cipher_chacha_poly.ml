@@ -13,8 +13,7 @@ let num_to_8_le_bytes n =
 
 
 let key_gen ~key ~nonce =
-  Chacha20.make_state_for_encryption ~key ~nonce ~count:0l
-  >>| fun s0 ->
+  let%map s0 = Chacha20.make_state_for_encryption ~key ~nonce ~count:0l in
   let s1 = Chacha20.process s0 in
   Cstruct.sub (Chacha20.serialize s1) 0 32
 
@@ -35,10 +34,8 @@ let compute_tag ~otk ~ad ~ciphertext =
 let encrypt_with_ad_low ~key ~fixed ~iv ~ad plaintext =
   let key = Private_key.bytes key in
   let nonce = Cstruct.concat [fixed; iv] in
-  key_gen ~key ~nonce
-  >>= fun otk ->
-  Chacha20.encrypt ~key ~counter:1l ~nonce plaintext
-  >>| fun ciphertext ->
+  let%bind otk = key_gen ~key ~nonce in
+  let%map ciphertext = Chacha20.encrypt ~key ~counter:1l ~nonce plaintext in
   let tag = compute_tag ~otk ~ad ~ciphertext in
   (ciphertext, tag)
 
@@ -50,9 +47,11 @@ let encode_iv nonce =
 
 
 let encrypt_with_ad ~key ~nonce ~ad plaintext =
-  encrypt_with_ad_low ~key ~ad ~fixed:(Cstruct.create 4) ~iv:(encode_iv nonce)
-    plaintext
-  >>| fun (ciphertext, tag) -> Cstruct.concat [ciphertext; tag]
+  let%map ciphertext, tag =
+    encrypt_with_ad_low ~key ~ad ~fixed:(Cstruct.create 4)
+      ~iv:(encode_iv nonce) plaintext
+  in
+  Cstruct.concat [ciphertext; tag]
 
 
 let split ciphertext_and_tag =
@@ -71,10 +70,8 @@ let encode_nonce n =
 let decrypt_with_ad ~key ~nonce ~ad ciphertext_and_tag =
   let key = Private_key.bytes key in
   let nonce = encode_nonce nonce in
-  split ciphertext_and_tag
-  >>= fun (ciphertext, received_tag) ->
-  key_gen ~key ~nonce
-  >>= fun otk ->
+  let%bind ciphertext, received_tag = split ciphertext_and_tag in
+  let%bind otk = key_gen ~key ~nonce in
   let expected_tag = compute_tag ~otk ~ad ~ciphertext in
   if equal_constant_time expected_tag received_tag then
     Chacha20.encrypt ~key ~counter:1l ~nonce ciphertext

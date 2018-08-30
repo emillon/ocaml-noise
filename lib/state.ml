@@ -108,8 +108,7 @@ let get_psk s =
 
 
 let mix_key_and_hash_psk s =
-  get_psk s
-  >>| fun psk ->
+  let%map psk = get_psk s in
   Symmetric_state.mix_key_and_hash s.symmetric_state psk
   |> set_symmetric_state_and_key s
 
@@ -141,10 +140,8 @@ let remote_key s = function
 
 
 let mix_dh_key s ~local ~remote =
-  local_key s local
-  >>= fun priv ->
-  remote_key s remote
-  >>= fun pub ->
+  let%bind priv = local_key s local in
+  let%bind pub = remote_key s remote in
   Dh.key_exchange s.params.dh ~priv ~pub |> mix_key s |> fun x -> Ok x
 
 
@@ -171,10 +168,12 @@ let decrypt_with_ad_cs cipher_state ~ad cipher =
 
 
 let decrypt_with_ad s ciphertext_and_tag =
-  decrypt_with_ad_cs s.cipher_state
-    ~ad:(Symmetric_state.h s.symmetric_state)
-    s.params.cipher ciphertext_and_tag
-  >>| fun (new_cs, plaintext) -> ({s with cipher_state = new_cs}, plaintext)
+  let%map new_cs, plaintext =
+    decrypt_with_ad_cs s.cipher_state
+      ~ad:(Symmetric_state.h s.symmetric_state)
+      s.params.cipher ciphertext_and_tag
+  in
+  ({s with cipher_state = new_cs}, plaintext)
 
 
 let handshake_hash s =
@@ -199,8 +198,8 @@ let next s =
 
 
 let decrypt_and_hash s0 ciphertext =
-  decrypt_with_ad s0 ciphertext
-  >>| fun (s1, plaintext) -> (mix_hash s1 ciphertext, plaintext)
+  let%map s1, plaintext = decrypt_with_ad s0 ciphertext in
+  (mix_hash s1 ciphertext, plaintext)
 
 
 let encrypt_with_ad_cs cipher_state ~ad cipher =
@@ -208,15 +207,17 @@ let encrypt_with_ad_cs cipher_state ~ad cipher =
 
 
 let encrypt_with_ad s plaintext =
-  encrypt_with_ad_cs s.cipher_state
-    ~ad:(Symmetric_state.h s.symmetric_state)
-    s.params.cipher plaintext
-  >>| fun (new_cs, ciphertext) -> ({s with cipher_state = new_cs}, ciphertext)
+  let%map new_cs, ciphertext =
+    encrypt_with_ad_cs s.cipher_state
+      ~ad:(Symmetric_state.h s.symmetric_state)
+      s.params.cipher plaintext
+  in
+  ({s with cipher_state = new_cs}, ciphertext)
 
 
 let encrypt_and_hash s payload =
-  encrypt_with_ad s payload
-  >>| fun (n1, ciphertext) -> (mix_hash n1 ciphertext, ciphertext)
+  let%map n1, ciphertext = encrypt_with_ad s payload in
+  (mix_hash n1 ciphertext, ciphertext)
 
 
 let transport_encrypt s plaintext cipher_state =
@@ -244,8 +245,8 @@ let with_ s ~send =
   fun k ->
     match get s with
     | Some cipher_state ->
-        k cipher_state
-        >>| fun (new_cs, result) -> (set s (Some new_cs), result)
+        let%map new_cs, result = k cipher_state in
+        (set s (Some new_cs), result)
     | None ->
         Error "Transport is not setup"
 

@@ -16,7 +16,7 @@ let unwrap what x =
       s
 
 let of_yojson_string what of_string json =
-  [%of_yojson: string] json >>| fun s ->
+  let%map s = [%of_yojson: string] json in
   match of_string s with
   | Ok _ as r -> r
   | Error e ->
@@ -44,14 +44,16 @@ module Public_key = struct
   type t = Noise.Public_key.t
 
   let of_yojson json =
-    [%of_yojson: Test_helpers.Hex_string.t] json >>| Noise.Public_key.of_bytes
+    let%map r = [%of_yojson: Test_helpers.Hex_string.t] json in
+    Noise.Public_key.of_bytes r
 end
 
 module Private_key = struct
   type t = Noise.Private_key.t
 
   let of_yojson json =
-    [%of_yojson: Test_helpers.Hex_string.t] json >>| Noise.Private_key.of_bytes
+    let%map r = [%of_yojson: Test_helpers.Hex_string.t] json in
+    Noise.Private_key.of_bytes r
 end
 
 module Test_vector = struct
@@ -122,28 +124,28 @@ module Test_vector = struct
     match repr.hash with
     | Some h -> Ok h
     | None ->
-      parse_parameters name >>| fun (_, _, _, hash_name) ->
+      let%map (_, _, _, hash_name) = parse_parameters name in
       Noise.Hash.of_string hash_name
 
   let cipher_of_repr (repr:repr) name =
     match repr.cipher with
     | Some x -> Ok x
     | None ->
-      parse_parameters name >>| fun (_, _, cipher_name, _) ->
+      let%map (_, _, cipher_name, _) = parse_parameters name in
       Noise.Cipher.of_string cipher_name
 
   let dh_of_repr (repr:repr) name =
     match repr.dh with
     | Some x -> Ok x
     | None ->
-      parse_parameters name >>| fun (_, dh_name, _, _) ->
+      let%map (_, dh_name, _, _) = parse_parameters name in
       Noise.Dh.of_string dh_name
 
   let pattern_of_repr (repr:repr) name =
     match repr.pattern with
     | Some x -> Ok x
     | None ->
-      parse_parameters name >>| fun (pattern_name, _, _, _) ->
+      let%map (pattern_name, _, _, _) = parse_parameters name in
       Noise.Pattern.of_string pattern_name
 
   let wrap_error f json =
@@ -184,8 +186,8 @@ module Test_vector = struct
         ->
         Error "from_psks"
     in
-    from_psk >>= fun from_psk ->
-    from_psks >>= fun from_psks ->
+    let%bind from_psk = from_psk in (* XXX bind above *)
+    let%bind from_psks = from_psks in
     match from_psk, from_psks with
     | None, None
       ->
@@ -199,31 +201,30 @@ module Test_vector = struct
       Error "psk_of_repr"
 
   let of_yojson json =
-    wrap_error repr_of_yojson json >>= fun repr ->
-    psk_of_repr repr >>= fun psk ->
-    name_of_repr repr >>= fun name ->
-    hash_of_repr repr name >>= fun hash ->
-    cipher_of_repr repr name >>= fun cipher ->
-    dh_of_repr repr name >>= fun dh ->
-    pattern_of_repr repr name >>= fun pattern ->
-    Ok
-      { name
-      ; pattern
-      ; dh
-      ; cipher
-      ; hash
-      ; init_prologue = repr.init_prologue
-      ; init_ephemeral = repr.init_ephemeral
-      ; init_remote_static = repr.init_remote_static
-      ; resp_prologue = repr.resp_prologue
-      ; resp_static = repr.resp_static
-      ; messages = repr.messages
-      ; handshake_hash = repr.handshake_hash
-      ; psk
-      ; init_static = repr.init_static
-      ; resp_ephemeral = repr.resp_ephemeral
-      ; resp_remote_static = repr.resp_remote_static
-      }
+    let%bind repr = wrap_error repr_of_yojson json in
+    let%bind psk = psk_of_repr repr in
+    let%bind name = name_of_repr repr in
+    let%bind hash = hash_of_repr repr name in
+    let%bind cipher = cipher_of_repr repr name in
+    let%bind dh = dh_of_repr repr name in
+    let%map pattern = pattern_of_repr repr name in
+    { name
+    ; pattern
+    ; dh
+    ; cipher
+    ; hash
+    ; init_prologue = repr.init_prologue
+    ; init_ephemeral = repr.init_ephemeral
+    ; init_remote_static = repr.init_remote_static
+    ; resp_prologue = repr.resp_prologue
+    ; resp_static = repr.resp_static
+    ; messages = repr.messages
+    ; handshake_hash = repr.handshake_hash
+    ; psk
+    ; init_static = repr.init_static
+    ; resp_ephemeral = repr.resp_ephemeral
+    ; resp_remote_static = repr.resp_remote_static
+    }
 end
 
 type test_vector_file =
@@ -240,11 +241,11 @@ let check_prefix s =
     Error "Wrong prefix"
 
 let params (vector:Test_vector.t) =
-  check_prefix vector.name >>= fun () ->
-  unwrap "pattern" vector.pattern >>= fun pattern ->
-  unwrap "DH" vector.dh >>= fun dh ->
-  unwrap "cipher" vector.cipher >>= fun cipher ->
-  unwrap "hash" vector.hash >>| fun hash ->
+  let%bind () = check_prefix vector.name in
+  let%bind pattern = unwrap "pattern" vector.pattern in
+  let%bind dh = unwrap "DH" vector.dh in
+  let%bind cipher = unwrap "cipher" vector.cipher in
+  let%map hash = unwrap "hash" vector.hash in
   (pattern, dh, cipher, hash)
 
 let get_result_exn msg = function
@@ -335,23 +336,23 @@ let make_initiator_from_vector pattern dh cipher hash (vector:Test_vector.t) =
 let post_handshake pattern init0 resp0 msgs =
   match Noise.Pattern.all_steps pattern, msgs with
   | [_], msg1::msgs ->
-    Noise.Protocol.write_message init0 msg1.payload >>= fun (init1, _) ->
-    Noise.Protocol.read_message resp0 msg1.ciphertext >>= fun (resp1, _) ->
-    Ok (init1, resp1, msgs)
+    let%bind (init1, _) = Noise.Protocol.write_message init0 msg1.payload in
+    let%map (resp1, _) = Noise.Protocol.read_message resp0 msg1.ciphertext in
+    (init1, resp1, msgs)
   | [_; _], msg1::msg2::msgs ->
-    Noise.Protocol.write_message init0 msg1.payload >>= fun (init1, _) ->
-    Noise.Protocol.read_message resp0 msg1.ciphertext >>= fun (resp1, _) ->
-    Noise.Protocol.write_message resp1 msg2.payload >>= fun (resp2, _) ->
-    Noise.Protocol.read_message init1 msg2.ciphertext >>= fun (init2, _) ->
-    Ok (init2, resp2, msgs)
+    let%bind (init1, _) = Noise.Protocol.write_message init0 msg1.payload in
+    let%bind (resp1, _) = Noise.Protocol.read_message resp0 msg1.ciphertext in
+    let%bind (resp2, _) = Noise.Protocol.write_message resp1 msg2.payload in
+    let%map (init2, _) = Noise.Protocol.read_message init1 msg2.ciphertext in
+    (init2, resp2, msgs)
   | [_; _; _], msg1::msg2::msg3::msgs ->
-    Noise.Protocol.write_message init0 msg1.payload >>= fun (init1, _) ->
-    Noise.Protocol.read_message resp0 msg1.ciphertext >>= fun (resp1, _) ->
-    Noise.Protocol.write_message resp1 msg2.payload >>= fun (resp2, _) ->
-    Noise.Protocol.read_message init1 msg2.ciphertext >>= fun (init2, _) ->
-    Noise.Protocol.write_message init2 msg3.payload >>= fun (init3, _) ->
-    Noise.Protocol.read_message resp2 msg3.ciphertext >>= fun (resp3, _) ->
-    Ok (resp3, init3, msgs)
+    let%bind (init1, _) = Noise.Protocol.write_message init0 msg1.payload in
+    let%bind (resp1, _) = Noise.Protocol.read_message resp0 msg1.ciphertext in
+    let%bind (resp2, _) = Noise.Protocol.write_message resp1 msg2.payload in
+    let%bind (init2, _) = Noise.Protocol.read_message init1 msg2.ciphertext in
+    let%bind (init3, _) = Noise.Protocol.write_message init2 msg3.payload in
+    let%map (resp3, _) = Noise.Protocol.read_message resp2 msg3.ciphertext in
+    (resp3, init3, msgs)
   | _ ->
     Error "Wrong number of messages"
 

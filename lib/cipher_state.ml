@@ -17,8 +17,7 @@ let with_ t f x =
   | Empty ->
       Ok (t, x)
   | Ready params ->
-      f ~key:params.key ~nonce:params.nonce x
-      >>| fun r ->
+      let%map r = f ~key:params.key ~nonce:params.nonce x in
       let new_cs =
         let new_nonce = Int64.succ params.nonce in
         if new_nonce = 0xff_ff_ff_ff_ff_ff_ff_ffL then Depleted

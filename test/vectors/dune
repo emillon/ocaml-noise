@@ -20,6 +20,7 @@
   (pps
    ppx_deriving.std
    ppx_deriving_yojson
+   ppx_let
   ))
  (flags :standard -w -39)
 )

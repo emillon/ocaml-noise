@@ -9,6 +9,6 @@
   tweetnacl
  )
  (preprocess
-  (pps ppx_deriving.std)
+  (pps ppx_deriving.std ppx_let)
  )
- )
+)

@@ -1,13 +1,3 @@
-let ( >>= ) x f =
-  match x with
-  | Ok x ->
-      f x
-  | Error _ as e ->
-      e
-
-
-let ( >>| ) x f = x >>= fun y -> Ok (f y)
-
 let equal_constant_time a b =
   let len_a = Cstruct.len a in
   let len_b = Cstruct.len b in
@@ -21,3 +11,16 @@ let equal_constant_time a b =
       r := !r lor byte_diff
     done;
     !r = 0
+
+
+module Let_syntax = struct
+  let bind x ~f =
+    match x with
+    | Ok x ->
+        f x
+    | Error _ as e ->
+        e
+
+
+  let map x ~f = bind x ~f:(fun y -> Ok (f y))
+end
