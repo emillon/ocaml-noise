@@ -1,5 +1,5 @@
 (library
- (name noise)
+ (public_name noise)
  (libraries
   chacha20
   cstruct
