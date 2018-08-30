@@ -22,6 +22,21 @@ Because of the way Noise works, it is possible to process messages in full
 without dealing with I/O or buffering. So, this library only deals with the
 handshake and encrypting/decrypting payloads.
 
+How to use this?
+----------------
+
+Refer to the examples in `test/examples/` for an example, but basically:
+
+- pick a protocol
+- import or generate the relevant keys on each side
+- create initial states using `Noise.State.make` and
+  `Noise.Protocol.initialize`
+- drive the handshake using `Noise.Protocol.read_message` and
+  `Noise.Protocol.write_message`
+- check that the handshake is completed (see `Noise.State.handshake_hash`)
+- send transport messages using `Noise.Protocol.read_message` and
+  `Noise.Protocol.write_message`
+
 Resources
 ---------
 

@@ -1,3 +1,6 @@
+(** A wrapper around [ck] and [h].
+    See v34 5.2. *)
+
 type t
 
 val create : Hash.t -> Dh.t -> Cstruct.t -> t
