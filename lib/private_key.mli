@@ -1,5 +1,4 @@
-type t
-[@@deriving eq]
+type t [@@deriving eq]
 
 val pp : Format.formatter -> t -> unit
 

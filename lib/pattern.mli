@@ -35,7 +35,7 @@ type t =
   | Npsk0
   | Xpsk1
   | Kpsk0
-[@@deriving eq,show]
+[@@deriving eq, show]
 
 val of_string : string -> (t, string) result
 

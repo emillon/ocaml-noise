@@ -1,10 +1,6 @@
 type t
 
-val create :
-  Hash.t ->
-  Dh.t ->
-  Cstruct.t ->
-  t
+val create : Hash.t -> Dh.t -> Cstruct.t -> t
 
 val mix_hash : t -> Cstruct.t -> t
 

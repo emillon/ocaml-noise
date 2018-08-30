@@ -3,12 +3,12 @@ type t =
   | SHA512
   | BLAKE2s
   | BLAKE2b
-[@@deriving eq,show]
+[@@deriving eq, show]
 
 val of_string : string -> (t, string) result
 
-(** [HASHLEN] *)
 val len : t -> int
+(** [HASHLEN] *)
 
 val hash : t -> Cstruct.t -> Cstruct.t
 
