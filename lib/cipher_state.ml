@@ -34,4 +34,4 @@ let has_key = function
   | Ready _ ->
       true
   | Depleted ->
-      false
+      true

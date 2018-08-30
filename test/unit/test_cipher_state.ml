@@ -80,7 +80,8 @@ let test_has_key =
   "has_key" >:::
   [ "Empty" >:: test Noise.Cipher_state.empty false
   ; "Ready" >:: test (Data.make 0L) true
-  ; "Depleted" >:: test Noise.Cipher_state.depleted false
+  ; "Depleted: we still expect to be able to decrypt" >:: test
+      Noise.Cipher_state.depleted true
   ]
 
 let suite =
