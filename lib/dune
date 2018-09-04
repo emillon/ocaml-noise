@@ -1,6 +1,7 @@
 (library
  (public_name noise)
  (libraries
+  callipyge
   chacha20
   cstruct
   digestif.ocaml

@@ -30,16 +30,22 @@ let test_key_exchange =
       expected
       got
   in
-  let test_exn priv pub _ctxt =
-    assert_raises Tweetnacl.Wrong_key_size @@ fun () ->
+  let test_exn priv pub msg _ctxt =
+    assert_raises (Invalid_argument msg) @@ fun () ->
     Noise.Dh_25519.key_exchange ~priv ~pub
   in
   let open Data in
   "key_exchange" >:::
   [ "Priv A, Pub B" >:: test alicesk bobpk shared
   ; "Priv B, Pub A" >:: test bobsk alicepk shared
-  ; "Wrong size in priv" >:: test_exn (Noise.Private_key.of_bytes bytes31) alicepk
-  ; "Wrong size in pub" >:: test_exn alicesk (Noise.Public_key.of_bytes bytes31) 
+  ; "Wrong size in priv" >:: test_exn
+      (Noise.Private_key.of_bytes bytes31)
+      alicepk
+      "secret_key_of_string: invalid key"
+  ; "Wrong size in pub" >:: test_exn
+      alicesk
+      (Noise.Public_key.of_bytes bytes31)
+      "public_key_of_string: key should consist of 32 bytes"
   ]
 
 let test_corresponds =
