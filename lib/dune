@@ -4,6 +4,7 @@
   chacha20
   cstruct
   digestif.ocaml
+  eqaf
   hex
   nocrypto
   tweetnacl

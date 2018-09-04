@@ -17,6 +17,7 @@ depends: [
   "cstruct"
   "digestif"
   "dune" {build & >= "1.1.0"}
+  "eqaf"
   "hex"
   "lwt_ppx" {test}
   "lwt" {test}
