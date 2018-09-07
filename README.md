@@ -6,6 +6,10 @@ Framework](https://noiseprotocol.org/).
 
 Not ready for primetime.
 
+More precisely, some primitives are implemented in an ad hoc manner. This passes
+a good amount of test vectors, but this has not been properly fuzzed and there
+are no countermeasures with respect to side channel attacks.
+
 What is this NOT?
 -----------------
 
