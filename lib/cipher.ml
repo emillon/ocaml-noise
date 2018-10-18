@@ -11,13 +11,11 @@ let of_string = function
   | s ->
       Printf.ksprintf (fun e -> Error e) "Cipher.of_string: %s" s
 
-
 let encrypt_with_ad = function
   | AES_GCM ->
       Cipher_aes_gcm.encrypt_with_ad
   | Chacha_poly ->
       Cipher_chacha_poly.encrypt_with_ad
-
 
 let decrypt_with_ad = function
   | AES_GCM ->

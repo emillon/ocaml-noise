@@ -46,7 +46,6 @@ let write_handler step s0 =
   | PSK ->
       return @@ State.mix_key_and_hash_psk s0
 
-
 let compose_write_handlers payload state steps =
   let rec go msgs s = function
     | [] ->
@@ -59,10 +58,8 @@ let compose_write_handlers payload state steps =
   let handlers = handlers @ [write_handler_payload payload] in
   go [] state handlers
 
-
 let apply_transport ~is_last s =
   if is_last then State.setup_transport s else s
-
 
 let write_message s0 payload =
   let s1, state = State.next s0 in
@@ -73,7 +70,6 @@ let write_message s0 payload =
       (s3, ciphertext)
   | Transport ->
       State.send_transport s1 payload
-
 
 let read_handler_payload s msg = State.decrypt_and_hash s msg
 
@@ -116,7 +112,6 @@ let read_handler step s0 msg0 =
       let%map s1 = State.mix_key_and_hash_psk s0 in
       (s1, msg0)
 
-
 let rec compose_read_handlers s steps msg =
   match steps with
   | step :: steps ->
@@ -125,7 +120,6 @@ let rec compose_read_handlers s steps msg =
       compose_read_handlers next_s steps next_msg
   | [] ->
       read_handler_payload s msg
-
 
 let read_message s0 msg =
   let s1, state = State.next s0 in
@@ -136,7 +130,6 @@ let read_message s0 msg =
       (s3, plaintext)
   | Transport ->
       State.receive_transport s1 msg
-
 
 let initialize s ~prologue ~public_keys =
   List.fold_left State.mix_hash s

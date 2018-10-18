@@ -27,7 +27,6 @@ let with_ t f x =
   | Depleted ->
       Error "Nonce depleted"
 
-
 let has_key = function
   | Empty ->
       false

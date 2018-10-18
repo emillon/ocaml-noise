@@ -113,7 +113,6 @@ let of_string = function
   | s ->
       Printf.ksprintf (fun e -> Error e) "Pattern.of_string: %s" s
 
-
 type step =
   | E
   | ES
@@ -196,7 +195,6 @@ let all_steps = function
       [[PSK; E; ES; SS]]
   | Xpsk1 ->
       [[E; ES; S; SS; PSK]]
-
 
 type transport =
   | One_way
