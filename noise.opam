@@ -16,7 +16,7 @@ build-test: [
 depends: [
   "callipyge" {>= "0.2"}
   "cstruct"
-  "digestif"
+  "digestif" {>= "0.7"}
   "dune" {build & >= "1.1.0"}
   "eqaf"
   "hex"

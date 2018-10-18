@@ -29,23 +29,39 @@ let len = function
       64
 
 
-let hash = function
+module type DIGESTIF = sig
+  type t
+
+  val to_raw_string : t -> string
+
+  val digest_string : ?off:int -> ?len:int -> string -> t
+
+  val hmac_string : key:string -> ?off:int -> ?len:int -> string -> t
+end
+
+let digestif : t -> (module DIGESTIF) = function
   | SHA256 ->
-      Hash_sha256.hash
+      (module Digestif.SHA256)
   | SHA512 ->
-      Hash_sha512.hash
+      (module Digestif.SHA512)
   | BLAKE2s ->
-      Hash_blake2s.hash
+      (module Digestif.BLAKE2S)
   | BLAKE2b ->
-      Hash_blake2b.hash
+      (module Digestif.BLAKE2B)
 
 
-let hmac = function
-  | SHA256 ->
-      Hash_sha256.hmac
-  | SHA512 ->
-      Hash_sha512.hmac
-  | BLAKE2s ->
-      Hash_blake2s.hmac
-  | BLAKE2b ->
-      Hash_blake2b.hmac
+let hash t data =
+  let (module D) = digestif t in
+  Cstruct.to_string data
+  |> D.digest_string
+  |> D.to_raw_string
+  |> Cstruct.of_string
+
+
+let hmac t ~key data =
+  let (module D) = digestif t in
+  let string_key = Cstruct.to_string key in
+  Cstruct.to_string data
+  |> D.hmac_string ~key:string_key
+  |> D.to_raw_string
+  |> Cstruct.of_string
