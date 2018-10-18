@@ -4,7 +4,6 @@ let rotate_left n b =
   let lo = shift_right_logical n (32 - b) in
   logor hi lo
 
-
 let quarter_round (a, b, c, d) =
   let open Int32 in
   (*1. a += b; d ^= a; d <<<= 16;*)
@@ -25,19 +24,16 @@ let quarter_round (a, b, c, d) =
   let b = rotate_left b 7 in
   (a, b, c, d)
 
-
 type state = int32 array [@@deriving eq, show]
 
 let make_state l =
   if List.length l = 16 then Array.of_list l else invalid_arg "make_state"
-
 
 let get s i = s.(i)
 
 let set i v s =
   let f j = if i = j then v else get s j in
   Array.init 16 f
-
 
 let quarter_round_state s (ia, ib, ic, id) =
   let a = get s ia in
@@ -47,12 +43,10 @@ let quarter_round_state s (ia, ib, ic, id) =
   let na, nb, nc, nd = quarter_round (a, b, c, d) in
   s |> set ia na |> set ib nb |> set ic nc |> set id nd
 
-
 type key = Key of Cstruct.t
 
 let make_key key =
   if Cstruct.len key = 32 then Ok (Key key) else Error "wrong key length"
-
 
 let key_words (Key key) =
   [ Cstruct.LE.get_uint32 key 0
@@ -64,19 +58,16 @@ let key_words (Key key) =
   ; Cstruct.LE.get_uint32 key 24
   ; Cstruct.LE.get_uint32 key 28 ]
 
-
 type nonce = Nonce of Cstruct.t
 
 let make_nonce nonce =
   if Cstruct.len nonce = 12 then Ok (Nonce nonce)
   else Error "wrong nonce length"
 
-
 let nonce_words (Nonce nonce) =
   [ Cstruct.LE.get_uint32 nonce 0
   ; Cstruct.LE.get_uint32 nonce 4
   ; Cstruct.LE.get_uint32 nonce 8 ]
-
 
 let ( >>= ) x f =
   match x with
@@ -85,7 +76,6 @@ let ( >>= ) x f =
   | Error _ as e ->
       e
 
-
 let make_state_for_encryption_checked ~key ~nonce count =
   let constant_words = [0x61707865l; 0x3320646el; 0x79622d32l; 0x6b206574l] in
   let count_words = [count] in
@@ -93,13 +83,11 @@ let make_state_for_encryption_checked ~key ~nonce count =
   @@ List.concat
        [constant_words; key_words key; count_words; nonce_words nonce]
 
-
 let make_state_for_encryption ~key ~nonce ~count =
   make_key key
   >>= fun key ->
   make_nonce nonce
   >>= fun nonce -> Ok (make_state_for_encryption_checked ~key ~nonce count)
-
 
 let rec iterate n f x = if n = 0 then x else iterate (n - 1) f (f x)
 
@@ -120,14 +108,12 @@ let process s0 =
   in
   add_state s0 (iterate 10 inner_block s0)
 
-
 let serialize s =
   let cs = Cstruct.create 64 in
   for i = 0 to 15 do
     Cstruct.LE.set_uint32 cs (4 * i) (get s i)
   done;
   cs
-
 
 let rec split_into_blocks cs =
   let len = Cstruct.len cs in
@@ -137,7 +123,6 @@ let rec split_into_blocks cs =
   else
     let block, rest = Cstruct.split cs block_len in
     block :: split_into_blocks rest
-
 
 let xor_block a b =
   let n = Cstruct.len a in
@@ -149,7 +134,6 @@ let xor_block a b =
     Cstruct.set_uint8 r i v
   done;
   r
-
 
 let encrypt ~key ~counter ~nonce plaintext =
   make_key key

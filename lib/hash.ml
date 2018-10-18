@@ -17,7 +17,6 @@ let of_string = function
   | s ->
       Printf.ksprintf (fun e -> Error e) "Hash.of_string: %s" s
 
-
 let len = function
   | SHA256 ->
       32
@@ -27,7 +26,6 @@ let len = function
       32
   | BLAKE2b ->
       64
-
 
 module type DIGESTIF = sig
   type t
@@ -49,14 +47,12 @@ let digestif : t -> (module DIGESTIF) = function
   | BLAKE2b ->
       (module Digestif.BLAKE2B)
 
-
 let hash t data =
   let (module D) = digestif t in
   Cstruct.to_string data
   |> D.digest_string
   |> D.to_raw_string
   |> Cstruct.of_string
-
 
 let hmac t ~key data =
   let (module D) = digestif t in

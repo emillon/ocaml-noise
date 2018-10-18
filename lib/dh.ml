@@ -6,11 +6,9 @@ let of_string = function
   | s ->
       Printf.ksprintf (fun e -> Error e) "Dh.of_string: %s" s
 
-
 let len = function
   | Curve_25519 ->
       32
-
 
 let key_exchange = function
   | Curve_25519 ->

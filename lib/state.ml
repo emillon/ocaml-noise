@@ -30,7 +30,6 @@ let prep_h name hash =
     buf )
   else Hash.hash hash buf_name
 
-
 let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e ~psk =
   let h = prep_h name hash in
   let params = {hash; dh; cipher} in
@@ -49,13 +48,11 @@ let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e ~psk =
   ; remaining_handshake_steps = Pattern.all_steps pattern
   ; psk }
 
-
 let public_key_opt = function
   | Some priv ->
       Some (Dh_25519.public_key priv)
   | None ->
       None
-
 
 let e_pub state = public_key_opt state.e
 
@@ -75,19 +72,15 @@ let split_dh ?(clear = false) s msg =
   let a, b = Cstruct.split msg len in
   (Public_key.of_bytes a, b)
 
-
 let mix_hash s data =
   {s with symmetric_state = Symmetric_state.mix_hash s.symmetric_state data}
-
 
 let set_symmetric_state_and_key s (symmetric_state, key) =
   {s with cipher_state = Cipher_state.create key; symmetric_state}
 
-
 let mix_key s input =
   Symmetric_state.mix_key s.symmetric_state input
   |> set_symmetric_state_and_key s
-
 
 let mix_hash_and_psk s0 key =
   let input = Public_key.bytes key in
@@ -98,7 +91,6 @@ let mix_hash_and_psk s0 key =
   | None ->
       s1
 
-
 let get_psk s =
   match s.psk with
   | Some psk ->
@@ -106,12 +98,10 @@ let get_psk s =
   | None ->
       Error "no psk"
 
-
 let mix_key_and_hash_psk s =
   let%map psk = get_psk s in
   Symmetric_state.mix_key_and_hash s.symmetric_state psk
   |> set_symmetric_state_and_key s
-
 
 type key_type =
   | Static
@@ -124,13 +114,11 @@ let key_or_error key_opt name =
   | Some k ->
       Ok k
 
-
 let local_key s = function
   | Static ->
       key_or_error s.s "s"
   | Ephemeral ->
       key_or_error s.e "e"
-
 
 let remote_key s = function
   | Static ->
@@ -138,12 +126,10 @@ let remote_key s = function
   | Ephemeral ->
       key_or_error s.re "re"
 
-
 let mix_dh_key s ~local ~remote =
   let%bind priv = local_key s local in
   let%bind pub = remote_key s remote in
   Dh.key_exchange s.params.dh ~priv ~pub |> mix_key s |> fun x -> Ok x
-
 
 let set_re s k =
   assert (Cstruct.len (Public_key.bytes k) = 32);
@@ -153,7 +139,6 @@ let set_re s k =
   | Some _ ->
       Error "re is already set"
 
-
 let set_rs s k =
   assert (Cstruct.len (Public_key.bytes k) = 32);
   match s.rs with
@@ -162,10 +147,8 @@ let set_rs s k =
   | Some _ ->
       Error "rs is already set"
 
-
 let decrypt_with_ad_cs cipher_state ~ad cipher =
   Cipher_state.with_ cipher_state (Cipher.decrypt_with_ad cipher ~ad)
-
 
 let decrypt_with_ad s ciphertext_and_tag =
   let%map new_cs, plaintext =
@@ -175,14 +158,12 @@ let decrypt_with_ad s ciphertext_and_tag =
   in
   ({s with cipher_state = new_cs}, plaintext)
 
-
 let handshake_hash s =
   match s.transport_init_to_resp with
   | None ->
       None
   | Some _ ->
       Some (Symmetric_state.h s.symmetric_state)
-
 
 type state =
   | Handshake_step of Pattern.step list * bool
@@ -196,15 +177,12 @@ let next s =
   | [] ->
       (s, Transport)
 
-
 let decrypt_and_hash s0 ciphertext =
   let%map s1, plaintext = decrypt_with_ad s0 ciphertext in
   (mix_hash s1 ciphertext, plaintext)
 
-
 let encrypt_with_ad_cs cipher_state ~ad cipher =
   Cipher_state.with_ cipher_state (Cipher.encrypt_with_ad cipher ~ad)
-
 
 let encrypt_with_ad s plaintext =
   let%map new_cs, ciphertext =
@@ -214,19 +192,15 @@ let encrypt_with_ad s plaintext =
   in
   ({s with cipher_state = new_cs}, ciphertext)
 
-
 let encrypt_and_hash s payload =
   let%map n1, ciphertext = encrypt_with_ad s payload in
   (mix_hash n1 ciphertext, ciphertext)
 
-
 let transport_encrypt s plaintext cipher_state =
   encrypt_with_ad_cs cipher_state ~ad:Cstruct.empty s.params.cipher plaintext
 
-
 let transport_decrypt s ciphertext cipher_state =
   decrypt_with_ad_cs cipher_state ~ad:Cstruct.empty s.params.cipher ciphertext
-
 
 let get_transport_init_to_resp s = s.transport_init_to_resp
 
@@ -250,7 +224,6 @@ let with_ s ~send =
     | None ->
         Error "Transport is not setup"
 
-
 let setup_transport s =
   let init_to_resp, resp_to_init = Symmetric_state.split s.symmetric_state in
   match Pattern.transport s.pattern with
@@ -261,10 +234,8 @@ let setup_transport s =
         transport_init_to_resp = Some init_to_resp
       ; transport_resp_to_init = Some resp_to_init }
 
-
 let send_transport s plaintext =
   with_ s ~send:true @@ transport_encrypt s plaintext
-
 
 let receive_transport s ciphertext =
   with_ s ~send:false @@ transport_decrypt s ciphertext

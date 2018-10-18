@@ -3,7 +3,6 @@ let iv ~nonce =
   Cstruct.BE.set_uint64 buf 4 nonce;
   buf
 
-
 let make_key key =
   let open Nocrypto.Cipher_block.AES.GCM in
   let private_bytes = Private_key.bytes key in
@@ -12,7 +11,6 @@ let make_key key =
       Ok key
   | exception Invalid_argument _ ->
       Error "Wrong key size"
-
 
 let encrypt_with_ad ~key ~nonce ~ad plaintext =
   let open Nocrypto.Cipher_block.AES.GCM in
@@ -23,7 +21,6 @@ let encrypt_with_ad ~key ~nonce ~ad plaintext =
       let iv = iv ~nonce in
       let result = encrypt ~key ~adata:ad ~iv plaintext in
       Ok (Cstruct.concat [result.message; result.tag])
-
 
 let decrypt_with_ad ~key ~nonce ~ad ciphertext_and_tag =
   let open Nocrypto.Cipher_block.AES.GCM in

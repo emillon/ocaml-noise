@@ -12,10 +12,8 @@ let mix_hash s data =
   let new_h = Hash.hash s.hash (Cstruct.concat [s.h; data]) in
   {s with h = new_h}
 
-
 let truncate_if_hash_64 s input =
   if Hash.len s.hash = 64 then Cstruct.sub input 0 32 else input
-
 
 let hkdf_gen hkdf s input =
   let {ck; hash; dh; _} = s in
@@ -25,7 +23,6 @@ let hkdf_gen hkdf s input =
   assert (Cstruct.len ck = hashlen);
   assert (List.mem ikm_length [0; 32; dh_len]);
   hkdf ~hmac:(Hash.hmac hash) ~salt:ck ~ikm:input
-
 
 let hkdf2 = hkdf_gen Hkdf.hkdf2
 
@@ -37,7 +34,6 @@ let mix_key s input =
   let truncated_temp_k = truncate_if_hash_64 new_s temp_k in
   (new_s, Private_key.of_bytes truncated_temp_k)
 
-
 let split s =
   let make_cipher_state temp_k =
     temp_k
@@ -47,7 +43,6 @@ let split s =
   in
   let temp_k1, temp_k2 = hkdf2 s Cstruct.empty in
   (make_cipher_state temp_k1, make_cipher_state temp_k2)
-
 
 let mix_key_and_hash s0 input =
   let new_ck, temp_h, temp_k = hkdf3 s0 input in
