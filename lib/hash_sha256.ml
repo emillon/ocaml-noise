@@ -1,4 +1,4 @@
-let to_cstruct (d : Digestif.SHA256.t) = Cstruct.of_string (d :> string)
+let to_cstruct d = Cstruct.of_string @@ Digestif.SHA256.to_raw_string d
 
 let hash data =
   Cstruct.to_string data |> Digestif.SHA256.digest_string |> to_cstruct
