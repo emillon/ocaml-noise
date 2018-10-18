@@ -9,8 +9,6 @@ let suite =
   ; Test_dh.suite
   ; Test_dh_25519.suite
   ; Test_hash.suite
-  ; Test_hash_blake2b.suite
-  ; Test_hash_blake2s.suite
   ; Test_hkdf.suite
   ; Test_pattern.suite
   ]

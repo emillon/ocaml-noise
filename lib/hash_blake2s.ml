@@ -4,6 +4,8 @@ let hash data =
   Cstruct.to_string data |> Digestif.BLAKE2S.digest_string |> to_cstruct
 
 
-let block_len = 64
-
-let hmac = Hash_hmac.hmac ~block_len hash
+let hmac ~key data =
+  let string_key = Cstruct.to_string key in
+  Cstruct.to_string data
+  |> Digestif.BLAKE2S.hmac_string ~key:string_key
+  |> to_cstruct
