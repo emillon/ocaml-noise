@@ -21,6 +21,7 @@ depends: [
   "ppx_deriving_yojson" {with-test}
   "ppx_let"
   "ppxlib" {build}
+  "rfc7748"
 ]
 build: [
   ["dune" "subst"] {pinned}

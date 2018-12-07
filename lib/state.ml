@@ -48,15 +48,15 @@ let make ~name ~pattern ~is_initiator ~hash ~dh ~cipher ~s ~rs ~e ~psk =
   ; remaining_handshake_steps = Pattern.all_steps pattern
   ; psk }
 
-let public_key_opt = function
+let public_key_opt dh = function
   | Some priv ->
-      Some (Dh_25519.public_key priv)
+      Some (Dh.public_key dh priv)
   | None ->
       None
 
-let e_pub state = public_key_opt state.e
+let e_pub state = public_key_opt state.params.dh state.e
 
-let s_pub state = public_key_opt state.s
+let s_pub state = public_key_opt state.params.dh state.s
 
 let is_initiator state = state.is_initiator
 
@@ -131,8 +131,10 @@ let mix_dh_key s ~local ~remote =
   let%bind pub = remote_key s remote in
   Dh.key_exchange s.params.dh ~priv ~pub |> mix_key s |> fun x -> Ok x
 
+let has_dh_size s k = Cstruct.len (Public_key.bytes k) = Dh.len s.params.dh
+
 let set_re s k =
-  assert (Cstruct.len (Public_key.bytes k) = 32);
+  assert (has_dh_size s k);
   match s.re with
   | None ->
       Ok {s with re = Some k}
@@ -140,7 +142,7 @@ let set_re s k =
       Error "re is already set"
 
 let set_rs s k =
-  assert (Cstruct.len (Public_key.bytes k) = 32);
+  assert (has_dh_size s k);
   match s.rs with
   | None ->
       Ok {s with rs = Some k}
