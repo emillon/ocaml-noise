@@ -13,6 +13,7 @@ let test_of_string =
   in
   "of_string" >:::
   [ "25519" >:= should_be (Ok Curve_25519)
+  ; "448" >:= should_be (Ok Curve_448)
   ]
 
 let test_len =
@@ -27,6 +28,7 @@ let test_len =
   in
   "len" >:::
   [ "25519" >:: test Noise.Dh.Curve_25519 32
+  ; "448" >:: test Noise.Dh.Curve_448 56
   ]
 
 let suite =

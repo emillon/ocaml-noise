@@ -8,6 +8,7 @@
   eqaf
   hex
   nocrypto
+  rfc7748
   tweetnacl
  )
  (preprocess
