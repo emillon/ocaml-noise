@@ -1,7 +1,7 @@
 open Util
 
 let pad16 x =
-  let len = Cstruct.len x in
+  let len = Cstruct.length x in
   let lenmod16 = len mod 16 in
   if lenmod16 = 0 then Cstruct.empty else Cstruct.create (16 - lenmod16)
 
@@ -22,8 +22,8 @@ let compute_tag ~otk ~ad ~ciphertext =
       ; pad16 ad
       ; ciphertext
       ; pad16 ciphertext
-      ; num_to_8_le_bytes (Cstruct.len ad)
-      ; num_to_8_le_bytes (Cstruct.len ciphertext) ]
+      ; num_to_8_le_bytes (Cstruct.length ad)
+      ; num_to_8_le_bytes (Cstruct.length ciphertext) ]
   in
   Tweetnacl.poly1305 ~key:otk mac_data
 
@@ -49,7 +49,7 @@ let encrypt_with_ad ~key ~nonce ~ad plaintext =
 
 let split ciphertext_and_tag =
   let tag_len = 128 / 8 in
-  let ciphertext_len = Cstruct.len ciphertext_and_tag - tag_len in
+  let ciphertext_len = Cstruct.length ciphertext_and_tag - tag_len in
   if ciphertext_len < 0 then Error "Ciphertext is too short"
   else Ok (Cstruct.split ciphertext_and_tag ciphertext_len)
 

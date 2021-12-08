@@ -62,7 +62,7 @@ let test_encrypt_with_ad =
 
 let alter_tag h =
   let cs = Hex.to_cstruct h in
-  let last_index = Cstruct.len cs - 1 in
+  let last_index = Cstruct.length cs - 1 in
   let modify = function
     | 0 -> 1
     | _ -> 0

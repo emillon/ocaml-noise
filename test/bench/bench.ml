@@ -1,6 +1,6 @@
 let crypto_random_bytes n =
-  let ic = Pervasives.open_in_bin "/dev/urandom" in
-  let s = Pervasives.really_input_string ic n in
+  let ic = Stdlib.open_in_bin "/dev/urandom" in
+  let s = Stdlib.really_input_string ic n in
   close_in ic;
   Cstruct.of_string s
 
@@ -31,9 +31,9 @@ let bench_ciphers () =
   let key_chacha = random_private_key 32 in
 
   Benchmark.throughputN 1
-      [ ("AES-GCM", bench_cipher Noise.Cipher.AES_GCM, key_aes)
-      ; ("ChaChaPoly", bench_cipher Noise.Cipher.Chacha_poly, key_chacha)
-      ]
+    [ ("AES-GCM", bench_cipher Noise.Cipher.AES_GCM, key_aes)
+    ; ("ChaChaPoly", bench_cipher Noise.Cipher.Chacha_poly, key_chacha)
+    ]
 
 let bench_hashes () =
   let data = crypto_random_bytes 1_000 in
@@ -43,11 +43,11 @@ let bench_hashes () =
   in
 
   Benchmark.throughputN 1
-      [ ("SHA256", bench_hash Noise.Hash.SHA256, ())
-      ; ("SHA512", bench_hash Noise.Hash.SHA512, ())
-      ; ("BLAKE2s", bench_hash Noise.Hash.BLAKE2s, ())
-      ; ("BLAKE2b", bench_hash Noise.Hash.BLAKE2b, ())
-      ]
+    [ ("SHA256", bench_hash Noise.Hash.SHA256, ())
+    ; ("SHA512", bench_hash Noise.Hash.SHA512, ())
+    ; ("BLAKE2s", bench_hash Noise.Hash.BLAKE2s, ())
+    ; ("BLAKE2b", bench_hash Noise.Hash.BLAKE2b, ())
+    ]
 
 let bench_dh () =
   let priv = random_private_key 32 in

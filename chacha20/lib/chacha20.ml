@@ -46,7 +46,7 @@ let quarter_round_state s (ia, ib, ic, id) =
 type key = Key of Cstruct.t
 
 let make_key key =
-  if Cstruct.len key = 32 then Ok (Key key) else Error "wrong key length"
+  if Cstruct.length key = 32 then Ok (Key key) else Error "wrong key length"
 
 let key_words (Key key) =
   [ Cstruct.LE.get_uint32 key 0
@@ -61,7 +61,7 @@ let key_words (Key key) =
 type nonce = Nonce of Cstruct.t
 
 let make_nonce nonce =
-  if Cstruct.len nonce = 12 then Ok (Nonce nonce)
+  if Cstruct.length nonce = 12 then Ok (Nonce nonce)
   else Error "wrong nonce length"
 
 let nonce_words (Nonce nonce) =
@@ -116,7 +116,7 @@ let serialize s =
   cs
 
 let rec split_into_blocks cs =
-  let len = Cstruct.len cs in
+  let len = Cstruct.length cs in
   let block_len = 64 in
   if len = 0 then []
   else if len < block_len then [cs]
@@ -125,7 +125,7 @@ let rec split_into_blocks cs =
     block :: split_into_blocks rest
 
 let xor_block a b =
-  let n = Cstruct.len a in
+  let n = Cstruct.length a in
   let r = Cstruct.create n in
   for i = 0 to n - 1 do
     let v_a = Cstruct.get_uint8 a i in

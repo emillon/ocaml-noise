@@ -30,7 +30,7 @@ let decrypt_with_ad ~key ~nonce ~ad ciphertext_and_tag =
   | Ok key ->
       let iv = iv ~nonce in
       let tag_len = 128 / 8 in
-      let ciphertext_len = Cstruct.len ciphertext_and_tag - tag_len in
+      let ciphertext_len = Cstruct.length ciphertext_and_tag - tag_len in
       if ciphertext_len < 0 then Error "Ciphertext is too short"
       else
         let ciphertext, tag =

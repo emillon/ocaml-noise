@@ -8,15 +8,15 @@
 let dh = Noise.Dh.Curve_25519
 
 let crypto_random_bytes n =
-  let ic = Pervasives.open_in_bin "/dev/urandom" in
-  let s = Pervasives.really_input_string ic n in
+  let ic = Stdlib.open_in_bin "/dev/urandom" in
+  let s = Stdlib.really_input_string ic n in
   close_in ic;
   Cstruct.of_string s
 
 let generate_private_key () =
   Noise.Dh.len dh
-  |> crypto_random_bytes 
-  |> Noise.Private_key.of_bytes 
+  |> crypto_random_bytes
+  |> Noise.Private_key.of_bytes
 
 let generate_key_pair () =
   let priv = generate_private_key () in
@@ -91,7 +91,7 @@ let responder ~prologue ~s ~read_chan =
       ~public_keys:[Noise.Dh_25519.public_key s]
   in
   let%lwt (state1, payload) = read state0 in
-  assert (Cstruct.len payload = 0);
+  assert (Cstruct.length payload = 0);
   assert (Noise.State.handshake_hash state1 <> None);
   let state = ref state1 in
   while%lwt true do
