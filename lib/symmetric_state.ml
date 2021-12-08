@@ -18,9 +18,9 @@ let truncate_if_hash_64 s input =
 let hkdf_gen hkdf s input =
   let {ck; hash; dh; _} = s in
   let hashlen = Hash.len hash in
-  let ikm_length = Cstruct.len input in
+  let ikm_length = Cstruct.length input in
   let dh_len = Dh.len dh in
-  assert (Cstruct.len ck = hashlen);
+  assert (Cstruct.length ck = hashlen);
   assert (List.mem ikm_length [0; 32; dh_len]);
   hkdf ~hmac:(Hash.hmac hash) ~salt:ck ~ikm:input
 

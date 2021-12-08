@@ -23,7 +23,7 @@ type t =
 let prep_h name hash =
   let buf_name = Cstruct.of_string name in
   let hashlen = Hash.len hash in
-  let name_len = Cstruct.len buf_name in
+  let name_len = Cstruct.length buf_name in
   if name_len <= hashlen then (
     let buf = Cstruct.create hashlen in
     Cstruct.blit buf_name 0 buf 0 name_len;
@@ -131,7 +131,7 @@ let mix_dh_key s ~local ~remote =
   let%bind pub = remote_key s remote in
   Dh.key_exchange s.params.dh ~priv ~pub |> mix_key s |> fun x -> Ok x
 
-let has_dh_size s k = Cstruct.len (Public_key.bytes k) = Dh.len s.params.dh
+let has_dh_size s k = Cstruct.length (Public_key.bytes k) = Dh.len s.params.dh
 
 let set_re s k =
   assert (has_dh_size s k);

@@ -15,8 +15,8 @@ let crypto_random_bytes n =
 
 let generate_private_key () =
   Noise.Dh.len dh
-  |> crypto_random_bytes 
-  |> Noise.Private_key.of_bytes 
+  |> crypto_random_bytes
+  |> Noise.Private_key.of_bytes
 
 let make_state ~is_initiator =
   Noise.State.make
@@ -99,7 +99,7 @@ let responder ~prologue ~read_chan ~write_chan =
   let%lwt (state1, _) = read state0 in
   let%lwt state2 = write state1 Cstruct.empty in
   let%lwt (state3, payload) = read state2 in
-  assert (Cstruct.len payload = 0);
+  assert (Cstruct.length payload = 0);
   assert (Noise.State.handshake_hash state3 <> None);
   let handle s =
     if s = "stop" then
